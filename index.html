@@ -703,7 +703,6 @@
         <h2>All tasks</h2>
         <div class="toolbar">
           <span id="sync-status" class="sync-status" role="status"></span>
-          <button type="button" class="btn-ghost" id="export-btn">Copy backup</button>
           <button type="button" class="btn-ghost" id="clear-done">Clear completed</button>
         </div>
       </div>
@@ -1474,17 +1473,6 @@
         if (confirm("Remove all completed tasks?")) {
           saveTasks(remaining);
           render();
-        }
-      });
-
-      document.getElementById("export-btn").addEventListener("click", function () {
-        var json = JSON.stringify(tasksCache);
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(json).then(function () {
-            alert("Backup JSON copied to clipboard.");
-          });
-        } else {
-          prompt("Copy this text:", json);
         }
       });
 
