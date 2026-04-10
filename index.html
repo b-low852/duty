@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1a1f2e" />
+  <title>Office Duty Roster</title>
+  <style>
+    :root {
+      --bg: #0f1219;
+      --surface: #1a1f2e;
+      --surface2: #232938;
+      /* Slightly transparent so bg.gif shows through */
+      --surface-glass: rgba(26, 31, 46, 0.78);
+      --surface2-glass: rgba(35, 41, 56, 0.72);
+      --border: #343b4f;
+      --text: #e8eaef;
+      --muted: #8b93a8;
+      --accent: #5b8def;
+      --danger: #e85d5d;
+      --success: #4ade80;
+      --radius: 12px;
+      --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      min-height: 100%;
+      min-height: 100dvh;
+      min-height: -webkit-fill-available;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100%;
+      min-height: 100dvh;
+      min-height: -webkit-fill-available;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+      -webkit-tap-highlight-color: transparent;
+      position: relative;
+    }
+
+    /* Full-bleed animated background — works on desktop and mobile (no background-attachment: fixed) */
+    .site-bg {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      min-height: 100dvh;
+      min-height: -webkit-fill-available;
+      z-index: 0;
+      pointer-events: none;
+      background-color: var(--bg);
+      background-image: url("bg.gif");
+      background-position: center center;
+      background-size: cover;
+      background-repeat: no-repeat;
+    }
+
+    .site-bg::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 18, 25, 0.38);
+    }
+
+    .wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1rem 1rem 3rem;
+      padding-left: max(1rem, env(safe-area-inset-left));
+      padding-right: max(1rem, env(safe-area-inset-right));
+      padding-bottom: max(3rem, env(safe-area-inset-bottom));
+    }
+
+    header {
+      margin-bottom: 1.5rem;
+    }
+
+    header h1 {
+      font-size: clamp(1.35rem, 4vw, 1.75rem);
+      font-weight: 700;
+      margin: 0 0 0.35rem;
+      letter-spacing: -0.02em;
+    }
+
+    header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .panel {
+      background: var(--surface-glass);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem 1.1rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .panel h2 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin: 0 0 1rem;
+      font-weight: 600;
+    }
+
+    .form-grid {
+      display: grid;
+      gap: 0.85rem;
+    }
+
+    @media (min-width: 640px) {
+      .form-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .form-grid .full {
+        grid-column: 1 / -1;
+      }
+    }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+
+    select,
+    input[type="text"],
+    input[type="number"],
+    textarea {
+      width: 100%;
+      padding: 0.65rem 0.75rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface2-glass);
+      color: var(--text);
+      font-size: 1rem;
+      min-height: 44px;
+    }
+
+    textarea {
+      min-height: 72px;
+      resize: vertical;
+    }
+
+    select:focus,
+    input:focus,
+    textarea:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.25rem;
+    }
+
+    button {
+      font-family: inherit;
+      font-size: 1rem;
+      min-height: 44px;
+      padding: 0.55rem 1.1rem;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:active {
+      opacity: 0.9;
+    }
+
+    .btn-ghost {
+      background: var(--surface2-glass);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .tasks-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .tasks-header h2 {
+      margin: 0;
+      font-size: 1rem;
+      color: var(--text);
+      text-transform: none;
+      letter-spacing: 0;
+    }
+
+    .empty {
+      text-align: center;
+      color: var(--muted);
+      padding: 2rem 1rem;
+      border: 1px dashed var(--border);
+      border-radius: var(--radius);
+      background: var(--surface2-glass);
+    }
+
+    .week-block {
+      margin-bottom: 1.5rem;
+    }
+
+    .week-label {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0.5rem 1rem;
+      margin-bottom: 0.65rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .week-num {
+      font-weight: 700;
+      font-size: 1.1rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 6px;
+      background: #3d2a2a;
+      color: #ffb4b4;
+    }
+
+    .week-num.alt {
+      background: #3d3528;
+      color: #ffd4a0;
+    }
+
+    .week-dates {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .task-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+
+    .task-card {
+      background: var(--surface2-glass);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.85rem 1rem;
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .task-card.urgent {
+      border-color: var(--danger);
+      box-shadow: 0 0 0 1px rgba(232, 93, 93, 0.35);
+      background: linear-gradient(135deg, rgba(42, 31, 34, 0.82) 0%, var(--surface2-glass) 40%);
+    }
+
+    .task-card.done {
+      opacity: 0.72;
+    }
+
+    @media (min-width: 720px) {
+      .task-card {
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+      }
+    }
+
+    .task-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      align-items: center;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.55rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #111;
+      max-width: 100%;
+      word-break: break-word;
+    }
+
+    .duty-text {
+      font-size: 0.95rem;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .remarks {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .task-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.65rem 1rem;
+    }
+
+    .check-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-height: 44px;
+      user-select: none;
+    }
+
+    .check-wrap input[type="checkbox"] {
+      width: 22px;
+      height: 22px;
+      accent-color: var(--success);
+      cursor: pointer;
+    }
+
+    .check-wrap span {
+      font-size: 0.9rem;
+    }
+
+    .done-date {
+      font-size: 0.82rem;
+      color: var(--success);
+    }
+
+    .btn-icon {
+      min-height: 40px;
+      padding: 0.4rem 0.75rem;
+      font-size: 0.85rem;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    .btn-icon:hover {
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .legend {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 0.5rem;
+    }
+
+    .sync-status {
+      font-size: 0.78rem;
+      color: var(--muted);
+      max-width: 16rem;
+      line-height: 1.3;
+    }
+
+    .sync-status.ok {
+      color: var(--success);
+    }
+
+    .sync-status.warn {
+      color: #fcd34d;
+    }
+
+    .sync-status.err {
+      color: var(--danger);
+    }
+
+    table.desktop-only {
+      display: none;
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    @media (min-width: 900px) {
+      .mobile-cards {
+        display: none;
+      }
+      table.desktop-only {
+        display: table;
+      }
+    }
+
+    th,
+    td {
+      padding: 0.55rem 0.65rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    tr.urgent td {
+      background: rgba(232, 93, 93, 0.08);
+    }
+
+    tr.done td {
+      opacity: 0.65;
+    }
+
+    .merged-week {
+      font-weight: 700;
+      vertical-align: middle;
+      border-right: 1px solid var(--border);
+      min-width: 5.5rem;
+      max-width: 11rem;
+      text-align: center;
+    }
+
+    .week-num.this-week {
+      background: rgba(74, 222, 128, 0.22);
+      color: #86efac;
+      border: 1px solid rgba(74, 222, 128, 0.45);
+    }
+
+    .week-num.last-week {
+      background: rgba(251, 191, 36, 0.16);
+      color: #fcd34d;
+      border: 1px solid rgba(251, 191, 36, 0.38);
+    }
+
+    .merged-dates {
+      color: var(--muted);
+      font-size: 0.85rem;
+      white-space: nowrap;
+    }
+
+    #date-range {
+      cursor: pointer;
+    }
+
+    .cal-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 0.75rem;
+      padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+    }
+
+    .cal-modal.is-open {
+      display: flex;
+    }
+
+    @media (min-width: 480px) {
+      .cal-modal {
+        align-items: center;
+        padding: 1rem;
+      }
+    }
+
+    .cal-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      border: none;
+      padding: 0;
+      cursor: pointer;
+    }
+
+    .cal-modal-panel {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 340px;
+      max-height: min(90vh, 520px);
+      overflow: auto;
+      background: var(--surface-glass);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    }
+
+    .cal-modal-head {
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr) 44px 44px;
+      align-items: center;
+      gap: 0.35rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .cal-modal-head h3 {
+      margin: 0;
+      font-size: 1.05rem;
+      text-align: center;
+      grid-column: 2;
+      min-width: 0;
+    }
+
+    .cal-nav {
+      min-height: 44px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface2-glass);
+      color: var(--text);
+      font-size: 1.35rem;
+      line-height: 1;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .cal-close {
+      grid-column: 4;
+      justify-self: end;
+      min-height: 44px;
+      width: 44px;
+      border: 1px solid var(--border);
+      background: var(--surface2-glass);
+      color: var(--muted);
+      font-size: 1.35rem;
+      line-height: 1;
+      cursor: pointer;
+      border-radius: 8px;
+      font-family: inherit;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .cal-close:hover {
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .cal-hint {
+      margin: 0 0 0.65rem;
+      font-size: 0.78rem;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .cal-weekdays {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 2px;
+      margin-bottom: 0.25rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .cal-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+    }
+
+    .cal-day {
+      aspect-ratio: 1;
+      min-height: 40px;
+      max-height: 48px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: var(--surface2-glass);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .cal-day:hover {
+      border-color: var(--accent);
+    }
+
+    .cal-day.out {
+      opacity: 0.35;
+    }
+
+    .cal-day.today {
+      box-shadow: 0 0 0 2px var(--accent);
+    }
+
+    .cal-day.anchor {
+      background: rgba(91, 141, 239, 0.35);
+      border-color: var(--accent);
+    }
+
+    .cal-day.in-range {
+      background: rgba(91, 141, 239, 0.18);
+    }
+
+    .cal-modal-foot {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.85rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .cal-modal-foot button {
+      flex: 1;
+      min-width: 120px;
+      min-height: 44px;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="site-bg" aria-hidden="true"></div>
+  <div class="wrap">
+    <header>
+      <h1>Office duty roster</h1>
+      <p>Add tasks, assign teammates, and mark them done when finished. Data is saved on this device.</p>
+    </header>
+
+    <section class="panel" aria-labelledby="add-heading">
+      <h2 id="add-heading">Add task</h2>
+      <form id="add-form" class="form-grid">
+        <div>
+          <label for="assignee">Assign to</label>
+          <select id="assignee" required></select>
+        </div>
+        <div>
+          <label for="duty">Duty</label>
+          <select id="duty" required></select>
+        </div>
+        <div>
+          <label for="week">Week number</label>
+          <input type="number" id="week" min="1" max="53" placeholder="e.g. 20" />
+        </div>
+        <div>
+          <label for="date-range">Date range</label>
+          <input
+            type="text"
+            id="date-range"
+            readonly
+            autocomplete="off"
+            placeholder="Tap to choose dates (e.g. 06/10/25–11/10/25)"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            aria-controls="calendar-modal-panel"
+            inputmode="none"
+          />
+          <input type="hidden" id="date-start" value="" />
+          <input type="hidden" id="date-end" value="" />
+        </div>
+        <div class="full">
+          <label for="remarks">Special remarks</label>
+          <textarea id="remarks" placeholder="Optional notes"></textarea>
+        </div>
+        <div class="full check-wrap">
+          <input type="checkbox" id="urgent" />
+          <label for="urgent" style="margin: 0; color: var(--text);">Highlight row (priority / overdue)</label>
+        </div>
+        <div class="full btn-row">
+          <button type="submit" class="btn-primary">Add task</button>
+        </div>
+      </form>
+      <p class="legend">BR = Boss room · MR = Meeting room · Duty colors match your sheet for quick scanning.</p>
+    </section>
+
+    <section class="panel">
+      <div class="tasks-header">
+        <h2>All tasks</h2>
+        <div class="toolbar">
+          <span id="sync-status" class="sync-status" role="status"></span>
+          <button type="button" class="btn-ghost" id="export-btn">Copy backup</button>
+          <button type="button" class="btn-ghost" id="clear-done">Clear completed</button>
+        </div>
+      </div>
+      <div id="tasks-root"></div>
+    </section>
+  </div>
+
+  <div class="cal-modal" id="calendar-modal" role="presentation" aria-hidden="true">
+    <button type="button" class="cal-modal-backdrop" id="cal-backdrop" aria-label="Close calendar"></button>
+    <div class="cal-modal-panel" id="calendar-modal-panel" role="dialog" aria-labelledby="cal-title" aria-modal="true">
+      <div class="cal-modal-head">
+        <button type="button" class="cal-nav" id="cal-prev" aria-label="Previous month">‹</button>
+        <h3 id="cal-title">Month</h3>
+        <button type="button" class="cal-nav" id="cal-next" aria-label="Next month">›</button>
+        <button type="button" class="cal-close" id="cal-close" aria-label="Close">×</button>
+      </div>
+      <p class="cal-hint">Tap a start date, then an end date for the range. Tap the same day twice for a single day.</p>
+      <div class="cal-weekdays" aria-hidden="true">
+        <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+      </div>
+      <div class="cal-grid" id="cal-grid"></div>
+      <div class="cal-modal-foot">
+        <button type="button" class="btn-ghost" id="cal-today">This month</button>
+        <button type="button" class="btn-ghost" id="cal-clear-pick">Clear selection</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script>
+    (function () {
+      var STORAGE_KEY = "office-duty-tasks-v1";
+      var FIRESTORE_COLLECTION = "duty_tasks";
+
+      var firestoreReady = false;
+      var dutyMigratedLocalToCloud = false;
+      var tasksCache = [];
+
+      function readLocalStorageTasks() {
+        try {
+          var raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return [];
+          var parsed = JSON.parse(raw);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+          return [];
+        }
+      }
+
+      tasksCache = readLocalStorageTasks();
+
+      function isFirebaseConfigured() {
+        var cfg = window.__OFFICE_DUTY_FIREBASE_CONFIG;
+        if (!cfg || typeof cfg !== "object") return false;
+        if (!cfg.apiKey || cfg.apiKey === "REPLACE_ME") return false;
+        return true;
+      }
+
+      function setSyncStatus(text, kind) {
+        var el = document.getElementById("sync-status");
+        if (!el) return;
+        el.textContent = text || "";
+        el.className = "sync-status" + (kind ? " " + kind : "");
+      }
+
+      function taskToFirestoreDoc(t) {
+        return {
+          assigneeId: t.assigneeId,
+          dutyId: t.dutyId,
+          week: t.week == null ? null : t.week,
+          dateRange: t.dateRange == null ? null : t.dateRange,
+          remarks: t.remarks == null ? null : t.remarks,
+          urgent: !!t.urgent,
+          completed: !!t.completed,
+          completedAt: t.completedAt == null ? null : t.completedAt
+        };
+      }
+
+      function taskFromFirestoreDoc(data, id) {
+        return {
+          id: id,
+          assigneeId: data.assigneeId,
+          dutyId: data.dutyId,
+          week: data.week == null ? null : data.week,
+          dateRange: data.dateRange == null ? null : data.dateRange,
+          remarks: data.remarks == null ? null : data.remarks,
+          urgent: !!data.urgent,
+          completed: !!data.completed,
+          completedAt: data.completedAt == null ? null : data.completedAt
+        };
+      }
+
+      function mirrorTasksToLocal(tasks) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+        } catch (e) {}
+      }
+
+      function syncAllTaskDocs(tasks) {
+        if (!firestoreReady) return Promise.resolve();
+        var db = firebase.firestore();
+        var col = db.collection(FIRESTORE_COLLECTION);
+        return col.get().then(function (snap) {
+          var ops = [];
+          var want = {};
+          var i;
+          for (i = 0; i < tasks.length; i++) want[tasks[i].id] = true;
+          snap.forEach(function (doc) {
+            if (!want[doc.id]) ops.push({ type: "del", ref: doc.ref });
+          });
+          for (i = 0; i < tasks.length; i++) {
+            var t = tasks[i];
+            ops.push({ type: "set", ref: col.doc(t.id), data: taskToFirestoreDoc(t) });
+          }
+          var chunk = 400;
+          function runBatch(start) {
+            var batch = db.batch();
+            var end = Math.min(start + chunk, ops.length);
+            var j;
+            for (j = start; j < end; j++) {
+              if (ops[j].type === "del") batch.delete(ops[j].ref);
+              else batch.set(ops[j].ref, ops[j].data);
+            }
+            if (end >= ops.length) return batch.commit();
+            return batch.commit().then(function () {
+              return runBatch(end);
+            });
+          }
+          if (ops.length === 0) return Promise.resolve();
+          return runBatch(0);
+        }).catch(function (err) {
+          setSyncStatus("Sync failed: " + (err.message || "error"), "err");
+        });
+      }
+
+      function attachFirestoreListener(syncLabel, syncClass) {
+        var db = firebase.firestore();
+        firestoreReady = true;
+        setSyncStatus(syncLabel, syncClass);
+        db.collection(FIRESTORE_COLLECTION).onSnapshot(
+          function (snap) {
+            if (snap.empty && tasksCache.length > 0 && !dutyMigratedLocalToCloud) {
+              dutyMigratedLocalToCloud = true;
+              syncAllTaskDocs(tasksCache);
+              return;
+            }
+            var list = [];
+            snap.forEach(function (d) {
+              list.push(taskFromFirestoreDoc(d.data(), d.id));
+            });
+            tasksCache = list;
+            mirrorTasksToLocal(tasksCache);
+            render();
+          },
+          function (err) {
+            firestoreReady = false;
+            setSyncStatus("Firestore: " + (err.message || "permission denied — publish firestore.rules"), "err");
+          }
+        );
+      }
+
+      function initFirebaseIfConfigured() {
+        if (typeof firebase === "undefined") {
+          setSyncStatus("Firebase scripts blocked or offline — using local storage only", "warn");
+          return;
+        }
+        if (!isFirebaseConfigured()) {
+          setSyncStatus("Local storage only — set firebase-config.js for cloud sync", "warn");
+          return;
+        }
+        setSyncStatus("Connecting…", "warn");
+        try {
+          if (!firebase.apps.length) {
+            firebase.initializeApp(window.__OFFICE_DUTY_FIREBASE_CONFIG);
+          }
+        } catch (e) {
+          setSyncStatus("Firebase init failed", "err");
+          return;
+        }
+        attachFirestoreListener("Live sync on", "ok");
+      }
+
+      var STAFF = [
+        { id: "eamonn", name: "Eamonn", bg: "#fb923c", fg: "#431407" },
+        { id: "garry", name: "Garry", bg: "#4ade80", fg: "#14532d" },
+        { id: "carlson", name: "Carlson", bg: "#93c5fd", fg: "#1e3a5f" },
+        { id: "eason", name: "Eason", bg: "#991b1b", fg: "#fecaca" },
+        { id: "pakho", name: "Pak Ho", bg: "#fef08a", fg: "#713f12" }
+      ];
+
+      var DUTIES = [
+        { id: "office-sweep", label: "Office Area (Sweep the floor)", bg: "#c084fc", fg: "#3b0764" },
+        { id: "trash", label: "Take out the trash", bg: "#fce7f3", fg: "#831843" },
+        { id: "brmr-sweep", label: "BR & MR (Sweep the floor)", bg: "#a5b4fc", fg: "#312e81" },
+        { id: "brmr-dust", label: "BR & MR (Dust all furniture)", bg: "#ffedd5", fg: "#7c2d12" },
+        { id: "toilet", label: "Clean the toilet", bg: "#166534", fg: "#dcfce7" }
+      ];
+
+      function staffById(id) {
+        for (var i = 0; i < STAFF.length; i++) {
+          if (STAFF[i].id === id) return STAFF[i];
+        }
+        return { name: id, bg: "#64748b", fg: "#f1f5f9" };
+      }
+
+      function dutyById(id) {
+        for (var i = 0; i < DUTIES.length; i++) {
+          if (DUTIES[i].id === id) return DUTIES[i];
+        }
+        return { label: id, bg: "#475569", fg: "#f8fafc" };
+      }
+
+      function loadTasks() {
+        return tasksCache;
+      }
+
+      function saveTasks(tasks) {
+        tasksCache = tasks.slice();
+        mirrorTasksToLocal(tasksCache);
+        syncAllTaskDocs(tasksCache);
+      }
+
+      function uid() {
+        return "t-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 9);
+      }
+
+      function formatDoneDate(iso) {
+        if (!iso) return "";
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return iso;
+        var day = String(d.getDate()).padStart(2, "0");
+        var month = String(d.getMonth() + 1).padStart(2, "0");
+        var year = d.getFullYear();
+        return day + "/" + month + "/" + year;
+      }
+
+      /** First day segment in date range display: dd/mm/yy or dd/mm/yyyy */
+      function parseDateRangeStart(dateRangeStr) {
+        if (!dateRangeStr || typeof dateRangeStr !== "string") return null;
+        var first = dateRangeStr.split(/\u2013|\u2014|-/)[0].trim();
+        var m = first.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+        if (!m) return null;
+        var day = parseInt(m[1], 10);
+        var month = parseInt(m[2], 10) - 1;
+        var y = parseInt(m[3], 10);
+        var year = y < 100 ? 2000 + y : y;
+        var d = new Date(year, month, day);
+        if (d.getFullYear() !== year || d.getMonth() !== month || d.getDate() !== day) return null;
+        return d;
+      }
+
+      /** ISO week key "YYYY-Www" for a local calendar date */
+      function isoWeekKeyFromDate(d) {
+        var date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        var day = (date.getDay() + 6) % 7;
+        date.setDate(date.getDate() - day + 3);
+        var isoYear = date.getFullYear();
+        var week1 = new Date(isoYear, 0, 4);
+        var w1d = (week1.getDay() + 6) % 7;
+        var mon1 = new Date(isoYear, 0, 4 - w1d);
+        var weeks = 1 + Math.round((date.getTime() - mon1.getTime()) / 604800000);
+        return isoYear + "-W" + (weeks < 10 ? "0" : "") + weeks;
+      }
+
+      function isoWeekKeyToday() {
+        return isoWeekKeyFromDate(new Date());
+      }
+
+      /** Monday 00:00 local time of the ISO week in key "YYYY-Www" */
+      function mondayFromIsoWeekKey(key) {
+        var m = String(key).match(/^(\d{4})-W(\d{1,2})$/);
+        if (!m) return new Date(0);
+        var isoYear = parseInt(m[1], 10);
+        var week = parseInt(m[2], 10);
+        var jan4 = new Date(isoYear, 0, 4);
+        var jan4Day = (jan4.getDay() + 6) % 7;
+        var mon1 = new Date(isoYear, 0, 4 - jan4Day);
+        mon1.setDate(mon1.getDate() + (week - 1) * 7);
+        return mon1;
+      }
+
+      function prevIsoWeekKey(key) {
+        var mon = mondayFromIsoWeekKey(key);
+        if (isNaN(mon.getTime())) return null;
+        mon.setDate(mon.getDate() - 7);
+        return isoWeekKeyFromDate(mon);
+      }
+
+      function pickDateSampleForGroup(list) {
+        for (var j = 0; j < list.length; j++) {
+          if (list[j].dateRange) return list[j].dateRange;
+        }
+        return "";
+      }
+
+      function pickManualWeekForGroup(list) {
+        for (var j = 0; j < list.length; j++) {
+          if (list[j].week != null && list[j].week !== "") return String(list[j].week);
+        }
+        return "";
+      }
+
+      /**
+       * Group tasks by calendar ISO week (from date range when set, else manual week vs today).
+       * Sort: this week → future weeks (soonest first) → past weeks (most recent first) → legacy buckets.
+       * Labels: only “This week” and “Last week”; every other group uses the date range (or a fallback).
+       */
+      function groupTasksByCalendarWeek(tasks) {
+        var map = {};
+        for (var i = 0; i < tasks.length; i++) {
+          var t = tasks[i];
+          var start = parseDateRangeStart(t.dateRange);
+          var key;
+          if (start) {
+            key = isoWeekKeyFromDate(start);
+          } else if (t.week != null && t.week !== "") {
+            var tw = isoWeekKeyToday().match(/^(\d{4})-W/);
+            var y = tw ? parseInt(tw[1], 10) : new Date().getFullYear();
+            var wn = Number(t.week);
+            key = y + "-W" + (wn < 10 ? "0" : "") + wn;
+          } else {
+            key = "_none";
+          }
+          if (!map[key]) map[key] = [];
+          map[key].push(t);
+        }
+
+        var keys = Object.keys(map);
+        var todayK = isoWeekKeyToday();
+        var lastK = prevIsoWeekKey(todayK);
+        var thisMonday = mondayFromIsoWeekKey(todayK).getTime();
+
+        function sortKey(k) {
+          if (k === "_none") return { tier: 4, t: 0 };
+          var mon = mondayFromIsoWeekKey(k).getTime();
+          if (k === todayK) return { tier: 0, t: 0 };
+          if (mon > thisMonday) return { tier: 1, t: mon };
+          return { tier: 2, t: -mon };
+        }
+
+        keys.sort(function (a, b) {
+          var sa = sortKey(a);
+          var sb = sortKey(b);
+          if (sa.tier !== sb.tier) return sa.tier - sb.tier;
+          if (sa.t !== sb.t) return sa.t < sb.t ? -1 : 1;
+          return a < b ? -1 : a > b ? 1 : 0;
+        });
+
+        function dateOnlyLabel(dateSample, manualW, k) {
+          if (dateSample) return dateSample;
+          if (manualW) return "Week " + manualW;
+          var wkFromKey = (String(k).match(/-W(\d{1,2})$/) || [])[1];
+          return wkFromKey ? "Wk " + wkFromKey : k;
+        }
+
+        return keys.map(function (k) {
+          var list = map[k];
+          var dateSample = pickDateSampleForGroup(list);
+          var manualW = pickManualWeekForGroup(list);
+          var primary;
+          var badgeClass = "";
+          var weekTable;
+          var dateTable;
+
+          if (k === "_none") {
+            primary = "No date / week";
+            weekTable = "—";
+            dateTable = dateSample || "—";
+          } else if (k === todayK) {
+            primary = "This week";
+            badgeClass = " this-week";
+            weekTable = "This week";
+            dateTable = dateSample || "—";
+          } else if (k === lastK) {
+            primary = "Last week";
+            badgeClass = " last-week";
+            weekTable = "Last week";
+            dateTable = dateSample || "—";
+          } else {
+            primary = dateOnlyLabel(dateSample, manualW, k);
+            weekTable = primary;
+            dateTable = dateSample || primary;
+          }
+
+          return {
+            weekKey: k,
+            tasks: list,
+            dateSample: dateSample,
+            labelPrimary: primary,
+            labelBadgeClass: badgeClass,
+            weekTable: weekTable,
+            dateTable: dateTable
+          };
+        });
+      }
+
+      function todayIso() {
+        return new Date().toISOString();
+      }
+
+      var calViewMonth = new Date();
+      var pickAnchor = null;
+
+      function pad2(n) {
+        return (n < 10 ? "0" : "") + n;
+      }
+
+      function isoFromDate(d) {
+        return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+      }
+
+      function formatShortFromIso(iso) {
+        var p = String(iso).split("-");
+        if (p.length !== 3) return iso;
+        return p[2] + "/" + p[1] + "/" + p[0].slice(-2);
+      }
+
+      function syncDateRangeDisplay() {
+        var s = document.getElementById("date-start").value;
+        var e = document.getElementById("date-end").value;
+        var el = document.getElementById("date-range");
+        if (!s && !e) {
+          el.value = "";
+          return;
+        }
+        if (s && e && s !== e) el.value = formatShortFromIso(s) + "–" + formatShortFromIso(e);
+        else if (s) el.value = formatShortFromIso(s);
+        else el.value = formatShortFromIso(e);
+      }
+
+      function buildDateRangeString() {
+        var t = document.getElementById("date-range").value.trim();
+        return t || null;
+      }
+
+      function renderCalModal() {
+        var grid = document.getElementById("cal-grid");
+        var title = document.getElementById("cal-title");
+        var y = calViewMonth.getFullYear();
+        var m = calViewMonth.getMonth();
+
+        title.textContent = calViewMonth.toLocaleString(undefined, { month: "long", year: "numeric" });
+
+        var first = new Date(y, m, 1);
+        var startPad = first.getDay();
+        var dim = new Date(y, m + 1, 0).getDate();
+        var prevDim = new Date(y, m, 0).getDate();
+
+        var cells = [];
+        var i;
+        for (i = startPad - 1; i >= 0; i--) {
+          cells.push({
+            y: m === 0 ? y - 1 : y,
+            mon: m === 0 ? 11 : m - 1,
+            day: prevDim - i,
+            out: true
+          });
+        }
+        for (i = 1; i <= dim; i++) {
+          cells.push({ y: y, mon: m, day: i, out: false });
+        }
+        var dNext = 1;
+        var nextMon = m === 11 ? 0 : m + 1;
+        var nextY = m === 11 ? y + 1 : y;
+        while (cells.length < 42) {
+          cells.push({ y: nextY, mon: nextMon, day: dNext++, out: true });
+        }
+
+        var todayIsoStr = isoFromDate(new Date());
+
+        grid.innerHTML = "";
+        for (i = 0; i < cells.length; i++) {
+          var c = cells[i];
+          var d = new Date(c.y, c.mon, c.day);
+          var iso = isoFromDate(d);
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "cal-day";
+          if (c.out) btn.classList.add("out");
+          if (iso === todayIsoStr) btn.classList.add("today");
+          if (pickAnchor && iso === pickAnchor) btn.classList.add("anchor");
+          btn.textContent = String(c.day);
+          btn.dataset.iso = iso;
+          grid.appendChild(btn);
+        }
+      }
+
+      function onCalDayPick(iso) {
+        if (!pickAnchor) {
+          pickAnchor = iso;
+          renderCalModal();
+          return;
+        }
+        var a = pickAnchor < iso ? pickAnchor : iso;
+        var b = pickAnchor < iso ? iso : pickAnchor;
+        document.getElementById("date-start").value = a;
+        document.getElementById("date-end").value = b;
+        pickAnchor = null;
+        syncDateRangeDisplay();
+        closeCalModal();
+      }
+
+      function onCalKeydown(e) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          closeCalModal();
+        }
+      }
+
+      function openCalModal() {
+        var modal = document.getElementById("calendar-modal");
+        if (modal.classList.contains("is-open")) return;
+
+        pickAnchor = null;
+        var startIso = document.getElementById("date-start").value;
+        if (startIso && /^(\d{4})-(\d{2})-(\d{2})$/.test(startIso)) {
+          var p = startIso.split("-");
+          calViewMonth = new Date(Number(p[0]), Number(p[1]) - 1, 1);
+        } else {
+          var now = new Date();
+          calViewMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        }
+        renderCalModal();
+        modal.classList.add("is-open");
+        modal.setAttribute("aria-hidden", "false");
+        document.getElementById("date-range").setAttribute("aria-expanded", "true");
+        document.addEventListener("keydown", onCalKeydown);
+      }
+
+      function closeCalModal() {
+        var modal = document.getElementById("calendar-modal");
+        modal.classList.remove("is-open");
+        modal.setAttribute("aria-hidden", "true");
+        document.getElementById("date-range").setAttribute("aria-expanded", "false");
+        document.removeEventListener("keydown", onCalKeydown);
+      }
+
+      function populateSelects() {
+        var assigneeEl = document.getElementById("assignee");
+        var dutyEl = document.getElementById("duty");
+        assigneeEl.innerHTML = STAFF.map(function (s) {
+          return '<option value="' + s.id + '">' + s.name + "</option>";
+        }).join("");
+        dutyEl.innerHTML = DUTIES.map(function (d) {
+          return '<option value="' + d.id + '">' + d.label + "</option>";
+        }).join("");
+      }
+
+      function render() {
+        var tasks = loadTasks();
+        var root = document.getElementById("tasks-root");
+        if (tasks.length === 0) {
+          root.innerHTML = '<p class="empty">No tasks yet. Add one above.</p>';
+          return;
+        }
+
+        var groups = groupTasksByCalendarWeek(tasks);
+        var cardsHtml = "";
+        var tableRows = "";
+
+        for (var g = 0; g < groups.length; g++) {
+          var grp = groups[g];
+          var list = grp.tasks;
+          var dateSample = grp.dateSample;
+          var altClass = g % 2 === 1 ? " alt" : "";
+          var badgeExtra = grp.labelBadgeClass || "";
+
+          cardsHtml += '<div class="week-block">';
+          cardsHtml += '<div class="week-label">';
+          cardsHtml += '<span class="week-num' + altClass + badgeExtra + '">' + escapeHtml(grp.labelPrimary) + "</span>";
+          if (dateSample && grp.labelPrimary !== dateSample) {
+            cardsHtml += '<span class="week-dates">' + escapeHtml(dateSample) + "</span>";
+          }
+          cardsHtml += "</div>";
+          cardsHtml += '<div class="task-list">';
+
+          for (var i = 0; i < list.length; i++) {
+            cardsHtml += taskCardHtml(list[i]);
+          }
+          cardsHtml += "</div></div>";
+
+          var rowspan = list.length;
+          for (var r = 0; r < list.length; r++) {
+            tableRows += taskTableRowHtml(list[r], r === 0, rowspan, grp.weekTable, grp.dateTable, g % 2 === 1);
+          }
+        }
+
+        root.innerHTML =
+          '<div class="mobile-cards">' +
+          cardsHtml +
+          "</div>" +
+          '<table class="desktop-only" aria-label="Tasks table">' +
+          "<thead><tr>" +
+          "<th>Week</th><th>Date</th><th>Name</th><th>Duty</th><th>Done</th><th>Done on</th><th>Remarks</th><th></th>" +
+          "</tr></thead><tbody>" +
+          tableRows +
+          "</tbody></table>";
+      }
+
+      function escapeHtml(s) {
+        if (s == null) return "";
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function badgeStyle(bg, fg) {
+        return "background:" + bg + ";color:" + fg + ";";
+      }
+
+      function taskCardHtml(t) {
+        var s = staffById(t.assigneeId);
+        var d = dutyById(t.dutyId);
+        var urgent = t.urgent ? " urgent" : "";
+        var done = t.completed ? " done" : "";
+        var doneDate = t.completed && t.completedAt ? '<p class="done-date">Done on ' + escapeHtml(formatDoneDate(t.completedAt)) + "</p>" : "";
+
+        return (
+          '<article class="task-card' +
+          urgent +
+          done +
+          '" data-id="' +
+          escapeHtml(t.id) +
+          '">' +
+          '<div class="task-meta">' +
+          '<div class="badges">' +
+          '<span class="badge" style="' +
+          badgeStyle(s.bg, s.fg) +
+          '">' +
+          escapeHtml(s.name) +
+          "</span>" +
+          '<span class="badge" style="' +
+          badgeStyle(d.bg, d.fg) +
+          '">' +
+          escapeHtml(d.label) +
+          "</span>" +
+          "</div>" +
+          (t.remarks ? '<p class="remarks">' + escapeHtml(t.remarks) + "</p>" : "") +
+          doneDate +
+          "</div>" +
+          '<div class="task-actions">' +
+          '<label class="check-wrap">' +
+          '<input type="checkbox" data-action="toggle" ' +
+          (t.completed ? "checked" : "") +
+          " />" +
+          "<span>Finished</span>" +
+          "</label>" +
+          '<button type="button" class="btn-icon" data-action="delete">Remove</button>' +
+          "</div>" +
+          "</article>"
+        );
+      }
+
+      function taskTableRowHtml(t, first, rowspan, weekColText, dateColText, altWeek) {
+        var s = staffById(t.assigneeId);
+        var d = dutyById(t.dutyId);
+        var urgent = t.urgent ? " urgent" : "";
+        var done = t.completed ? " done" : "";
+        var weekCell = "";
+        var dateCell = "";
+        if (first) {
+          weekCell =
+            '<td class="merged-week" rowspan="' +
+            rowspan +
+            '" style="background:' +
+            (altWeek ? "#3d3528" : "#3d2a2a") +
+            ";color:" +
+            (altWeek ? "#ffd4a0" : "#ffb4b4") +
+            '">' +
+            escapeHtml(weekColText || "—") +
+            "</td>";
+          dateCell =
+            '<td class="merged-dates" rowspan="' +
+            rowspan +
+            '">' +
+            escapeHtml(dateColText || "—") +
+            "</td>";
+        }
+        return (
+          "<tr class='" +
+          urgent +
+          done +
+          "' data-id='" +
+          escapeHtml(t.id) +
+          "'>" +
+          weekCell +
+          dateCell +
+          "<td><span class='badge' style='" +
+          badgeStyle(s.bg, s.fg) +
+          "'>" +
+          escapeHtml(s.name) +
+          "</span></td>" +
+          "<td><span class='badge' style='" +
+          badgeStyle(d.bg, d.fg) +
+          "'>" +
+          escapeHtml(d.label) +
+          "</span></td>" +
+          "<td><input type='checkbox' data-action='toggle' " +
+          (t.completed ? "checked" : "") +
+          " /></td>" +
+          "<td class='done-date'>" +
+          (t.completed && t.completedAt ? escapeHtml(formatDoneDate(t.completedAt)) : "—") +
+          "</td>" +
+          "<td>" +
+          escapeHtml(t.remarks || "") +
+          "</td>" +
+          "<td><button type='button' class='btn-icon' data-action='delete'>Remove</button></td>" +
+          "</tr>"
+        );
+      }
+
+
+      function toggleComplete(id, completed) {
+        var tasks = loadTasks();
+        for (var i = 0; i < tasks.length; i++) {
+          if (tasks[i].id === id) {
+            tasks[i].completed = completed;
+            tasks[i].completedAt = completed ? todayIso() : null;
+            break;
+          }
+        }
+        saveTasks(tasks);
+        render();
+      }
+
+      function removeTask(id) {
+        var tasks = loadTasks().filter(function (t) {
+          return t.id !== id;
+        });
+        saveTasks(tasks);
+        render();
+      }
+
+      document.getElementById("add-form").addEventListener("submit", function (e) {
+        e.preventDefault();
+        var weekVal = document.getElementById("week").value.trim();
+        var tasks = loadTasks();
+        tasks.unshift({
+          id: uid(),
+          assigneeId: document.getElementById("assignee").value,
+          dutyId: document.getElementById("duty").value,
+          week: weekVal === "" ? null : Number(weekVal),
+          dateRange: buildDateRangeString(),
+          remarks: document.getElementById("remarks").value.trim() || null,
+          urgent: document.getElementById("urgent").checked,
+          completed: false,
+          completedAt: null
+        });
+        saveTasks(tasks);
+        document.getElementById("remarks").value = "";
+        document.getElementById("urgent").checked = false;
+        document.getElementById("date-start").value = "";
+        document.getElementById("date-end").value = "";
+        document.getElementById("date-range").value = "";
+        render();
+      });
+
+      document.getElementById("clear-done").addEventListener("click", function () {
+        var all = loadTasks();
+        var remaining = all.filter(function (t) {
+          return !t.completed;
+        });
+        if (remaining.length === all.length) return;
+        if (confirm("Remove all completed tasks?")) {
+          saveTasks(remaining);
+          render();
+        }
+      });
+
+      document.getElementById("export-btn").addEventListener("click", function () {
+        var json = JSON.stringify(tasksCache);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(json).then(function () {
+            alert("Backup JSON copied to clipboard.");
+          });
+        } else {
+          prompt("Copy this text:", json);
+        }
+      });
+
+      var tasksRoot = document.getElementById("tasks-root");
+      tasksRoot.addEventListener("change", function (e) {
+        var target = e.target;
+        if (target.getAttribute("data-action") !== "toggle") return;
+        var row = target.closest("[data-id]");
+        if (!row) return;
+        toggleComplete(row.getAttribute("data-id"), target.checked);
+      });
+      tasksRoot.addEventListener("click", function (e) {
+        var btn = e.target.closest("[data-action='delete']");
+        if (!btn) return;
+        var row = btn.closest("[data-id]");
+        if (!row) return;
+        if (confirm("Remove this task?")) removeTask(row.getAttribute("data-id"));
+      });
+
+      document.getElementById("cal-grid").addEventListener("click", function (e) {
+        var b = e.target.closest(".cal-day");
+        if (!b || !b.dataset.iso) return;
+        onCalDayPick(b.dataset.iso);
+      });
+
+      var dateRangeInput = document.getElementById("date-range");
+      dateRangeInput.addEventListener("click", function (e) {
+        e.preventDefault();
+        openCalModal();
+      });
+      dateRangeInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openCalModal();
+        }
+      });
+      document.getElementById("cal-close").addEventListener("click", closeCalModal);
+      document.getElementById("cal-backdrop").addEventListener("click", closeCalModal);
+      document.getElementById("cal-prev").addEventListener("click", function () {
+        calViewMonth = new Date(calViewMonth.getFullYear(), calViewMonth.getMonth() - 1, 1);
+        renderCalModal();
+      });
+      document.getElementById("cal-next").addEventListener("click", function () {
+        calViewMonth = new Date(calViewMonth.getFullYear(), calViewMonth.getMonth() + 1, 1);
+        renderCalModal();
+      });
+      document.getElementById("cal-today").addEventListener("click", function () {
+        var n = new Date();
+        calViewMonth = new Date(n.getFullYear(), n.getMonth(), 1);
+        renderCalModal();
+      });
+      document.getElementById("cal-clear-pick").addEventListener("click", function () {
+        pickAnchor = null;
+        renderCalModal();
+      });
+
+      populateSelects();
+      initFirebaseIfConfigured();
+      render();
+    })();
+  </script>
+</body>
+</html>

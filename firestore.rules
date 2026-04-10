@@ -1,0 +1,12 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Shared roster: anyone with the app can read/write tasks (no login).
+    // Only the duty_tasks collection is exposed; other paths stay locked by default.
+    // Anyone who knows your projectId could call the API — OK for a small trusted team only.
+    match /duty_tasks/{taskId} {
+      allow read, write: if true;
+    }
+  }
+}
