@@ -784,10 +784,11 @@
       var FIRESTORE_STAFF_COLLECTION = "duty_staff";
       var STAFF_CUSTOM_KEY = "office-duty-staff-custom-v1";
 
-      var firestoreReady = false;
       var dutyMigratedLocalToCloud = false;
       var staffMigratedLocalToCloud = false;
       var tasksCache = [];
+      /** Task ids we are deleting — ignore them in onSnapshot until delete commits (avoids race with server). */
+      var pendingTaskDeletes = Object.create(null);
 
       function normalizeCustomStaffEntry(x) {
         if (!x || typeof x.id !== "string" || typeof x.name !== "string" || !String(x.name).trim()) {
@@ -881,8 +882,12 @@
         } catch (e) {}
       }
 
+      function canUseFirestore() {
+        return typeof firebase !== "undefined" && firebase.apps && firebase.apps.length > 0;
+      }
+
       function syncAllTaskDocs(tasks) {
-        if (!firestoreReady) return Promise.resolve();
+        if (!canUseFirestore()) return Promise.resolve();
         var db = firebase.firestore();
         var col = db.collection(FIRESTORE_COLLECTION);
         return col.get().then(function (snap) {
@@ -926,12 +931,8 @@
         };
       }
 
-      function canWriteStaffToFirestore() {
-        return typeof firebase !== "undefined" && firebase.apps && firebase.apps.length > 0;
-      }
-
       function syncAllStaffDocs(staffList) {
-        if (!canWriteStaffToFirestore()) return Promise.resolve();
+        if (!canUseFirestore()) return Promise.resolve();
         var db = firebase.firestore();
         var col = db.collection(FIRESTORE_STAFF_COLLECTION);
         return col
@@ -972,7 +973,6 @@
 
       function attachFirestoreListener(syncLabel, syncClass) {
         var db = firebase.firestore();
-        firestoreReady = true;
         setSyncStatus(syncLabel, syncClass);
         db.collection(FIRESTORE_COLLECTION).onSnapshot(
           function (snap) {
@@ -983,6 +983,7 @@
             }
             var list = [];
             snap.forEach(function (d) {
+              if (pendingTaskDeletes[d.id]) return;
               list.push(taskFromFirestoreDoc(d.data(), d.id));
             });
             tasksCache = list;
@@ -990,7 +991,6 @@
             render();
           },
           function (err) {
-            firestoreReady = false;
             setSyncStatus("Firestore: " + (err.message || "permission denied — publish firestore.rules"), "err");
           }
         );
@@ -1678,11 +1678,30 @@
       }
 
       function removeTask(id) {
+        pendingTaskDeletes[id] = true;
         var tasks = loadTasks().filter(function (t) {
           return t.id !== id;
         });
         saveTasks(tasks);
         render();
+        if (canUseFirestore()) {
+          firebase
+            .firestore()
+            .collection(FIRESTORE_COLLECTION)
+            .doc(id)
+            .delete()
+            .then(function () {
+              delete pendingTaskDeletes[id];
+              syncAllTaskDocs(loadTasks());
+            })
+            .catch(function (err) {
+              delete pendingTaskDeletes[id];
+              setSyncStatus("Remove failed: " + (err.message || "error"), "err");
+              render();
+            });
+        } else {
+          delete pendingTaskDeletes[id];
+        }
       }
 
       document.getElementById("add-form").addEventListener("submit", function (e) {
@@ -1716,8 +1735,41 @@
         });
         if (remaining.length === all.length) return;
         if (confirm("Remove all completed tasks?")) {
+          var done = all.filter(function (t) {
+            return t.completed;
+          });
+          var k;
+          for (k = 0; k < done.length; k++) {
+            pendingTaskDeletes[done[k].id] = true;
+          }
           saveTasks(remaining);
           render();
+          if (canUseFirestore() && done.length > 0) {
+            var db = firebase.firestore();
+            var col = db.collection(FIRESTORE_COLLECTION);
+            Promise.all(
+              done.map(function (t) {
+                return col.doc(t.id).delete();
+              })
+            )
+              .then(function () {
+                for (var i = 0; i < done.length; i++) {
+                  delete pendingTaskDeletes[done[i].id];
+                }
+                syncAllTaskDocs(loadTasks());
+              })
+              .catch(function (err) {
+                for (var j = 0; j < done.length; j++) {
+                  delete pendingTaskDeletes[done[j].id];
+                }
+                setSyncStatus("Clear failed: " + (err.message || "error"), "err");
+                render();
+              });
+          } else {
+            for (k = 0; k < done.length; k++) {
+              delete pendingTaskDeletes[done[k].id];
+            }
+          }
         }
       });
 
