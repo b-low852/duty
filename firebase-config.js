@@ -1,6 +1,6 @@
 /**
  * Firebase web app config (project: duty-ca5f4).
- * Firestore: create DB + publish firestore.rules (open duty_tasks — no login).
+ * Firestore: create DB + publish firestore.rules (duty_tasks + duty_staff — no login).
  */
 window.__OFFICE_DUTY_FIREBASE_CONFIG = {
   apiKey: "AIzaSyBYHAwu5OFdwlwk9ECMJzVC_8X4VG-5i8k",

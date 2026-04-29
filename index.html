@@ -413,6 +413,12 @@
       margin-top: 0.5rem;
     }
 
+    .legend code {
+      font-size: 0.92em;
+      color: var(--text);
+      opacity: 0.9;
+    }
+
     .sync-status {
       font-size: 0.78rem;
       color: var(--muted);
@@ -701,6 +707,10 @@
             />
             <button type="button" class="btn-ghost" id="add-assignee-btn">Add</button>
           </div>
+          <p class="legend" style="margin-top: 0.4rem; margin-bottom: 0">
+            New names are saved on this device and in Firestore (<code>duty_staff</code>). Publish rules that allow
+            <code>duty_staff</code> so sync works.
+          </p>
         </div>
         <div>
           <label for="duty">Duty</label>
@@ -781,10 +791,45 @@
     (function () {
       var STORAGE_KEY = "office-duty-tasks-v1";
       var FIRESTORE_COLLECTION = "duty_tasks";
+      var FIRESTORE_STAFF_COLLECTION = "duty_staff";
+      var STAFF_CUSTOM_KEY = "office-duty-staff-custom-v1";
 
       var firestoreReady = false;
       var dutyMigratedLocalToCloud = false;
+      var staffMigratedLocalToCloud = false;
       var tasksCache = [];
+
+      function normalizeCustomStaffEntry(x) {
+        if (!x || typeof x.id !== "string" || typeof x.name !== "string" || !String(x.name).trim()) {
+          return null;
+        }
+        return {
+          id: x.id,
+          name: String(x.name).trim(),
+          bg: typeof x.bg === "string" ? x.bg : "#64748b",
+          fg: typeof x.fg === "string" ? x.fg : "#f1f5f9"
+        };
+      }
+
+      function loadCustomStaffFromLocalStorage() {
+        try {
+          var raw = localStorage.getItem(STAFF_CUSTOM_KEY);
+          if (!raw) return [];
+          var parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed)) return [];
+          var out = [];
+          var i;
+          for (i = 0; i < parsed.length; i++) {
+            var n = normalizeCustomStaffEntry(parsed[i]);
+            if (n) out.push(n);
+          }
+          return out;
+        } catch (e) {
+          return [];
+        }
+      }
+
+      var customStaffCache = loadCustomStaffFromLocalStorage();
 
       function readLocalStorageTasks() {
         try {
@@ -883,6 +928,58 @@
         });
       }
 
+      function staffToFirestoreDoc(s) {
+        return {
+          name: s.name,
+          bg: s.bg,
+          fg: s.fg
+        };
+      }
+
+      function canWriteStaffToFirestore() {
+        return typeof firebase !== "undefined" && firebase.apps && firebase.apps.length > 0;
+      }
+
+      function syncAllStaffDocs(staffList) {
+        if (!canWriteStaffToFirestore()) return Promise.resolve();
+        var db = firebase.firestore();
+        var col = db.collection(FIRESTORE_STAFF_COLLECTION);
+        return col
+          .get()
+          .then(function (snap) {
+            var ops = [];
+            var want = {};
+            var i;
+            for (i = 0; i < staffList.length; i++) want[staffList[i].id] = true;
+            snap.forEach(function (doc) {
+              if (!want[doc.id]) ops.push({ type: "del", ref: doc.ref });
+            });
+            for (i = 0; i < staffList.length; i++) {
+              var s = staffList[i];
+              ops.push({ type: "set", ref: col.doc(s.id), data: staffToFirestoreDoc(s) });
+            }
+            var chunk = 400;
+            function runBatch(start) {
+              var batch = db.batch();
+              var end = Math.min(start + chunk, ops.length);
+              var j;
+              for (j = start; j < end; j++) {
+                if (ops[j].type === "del") batch.delete(ops[j].ref);
+                else batch.set(ops[j].ref, ops[j].data);
+              }
+              if (end >= ops.length) return batch.commit();
+              return batch.commit().then(function () {
+                return runBatch(end);
+              });
+            }
+            if (ops.length === 0) return Promise.resolve();
+            return runBatch(0);
+          })
+          .catch(function (err) {
+            setSyncStatus("Staff sync failed: " + (err.message || "error"), "err");
+          });
+      }
+
       function attachFirestoreListener(syncLabel, syncClass) {
         var db = firebase.firestore();
         firestoreReady = true;
@@ -909,6 +1006,40 @@
         );
       }
 
+      function attachStaffFirestoreListener() {
+        var db = firebase.firestore();
+        db.collection(FIRESTORE_STAFF_COLLECTION).onSnapshot(
+          function (snap) {
+            if (snap.empty && customStaffCache.length > 0 && !staffMigratedLocalToCloud) {
+              staffMigratedLocalToCloud = true;
+              syncAllStaffDocs(customStaffCache);
+              return;
+            }
+            var list = [];
+            snap.forEach(function (d) {
+              var data = d.data();
+              if (!data) return;
+              var row = normalizeCustomStaffEntry({
+                id: d.id,
+                name: data.name,
+                bg: data.bg,
+                fg: data.fg
+              });
+              if (row) list.push(row);
+            });
+            customStaffCache = list;
+            try {
+              localStorage.setItem(STAFF_CUSTOM_KEY, JSON.stringify(customStaffCache));
+            } catch (e) {}
+            populateSelects();
+            render();
+          },
+          function (err) {
+            setSyncStatus("Firestore (names): " + (err.message || "permission — publish firestore.rules"), "err");
+          }
+        );
+      }
+
       function initFirebaseIfConfigured() {
         if (typeof firebase === "undefined") {
           setSyncStatus("Firebase scripts blocked or offline — using local storage only", "warn");
@@ -928,9 +1059,8 @@
           return;
         }
         attachFirestoreListener("Live sync on", "ok");
+        attachStaffFirestoreListener();
       }
-
-      var STAFF_CUSTOM_KEY = "office-duty-staff-custom-v1";
 
       var STAFF_BUILTIN = [
         { id: "eamonn", name: "Eamonn", bg: "#fb923c", fg: "#431407" },
@@ -950,22 +1080,21 @@
       ];
 
       function readCustomStaff() {
-        try {
-          var raw = localStorage.getItem(STAFF_CUSTOM_KEY);
-          if (!raw) return [];
-          var parsed = JSON.parse(raw);
-          return Array.isArray(parsed) ? parsed.filter(function (x) {
-            return x && typeof x.id === "string" && typeof x.name === "string" && x.name.trim();
-          }) : [];
-        } catch (e) {
-          return [];
-        }
+        return customStaffCache;
       }
 
       function saveCustomStaff(list) {
+        var out = [];
+        var i;
+        for (i = 0; i < list.length; i++) {
+          var n = normalizeCustomStaffEntry(list[i]);
+          if (n) out.push(n);
+        }
+        customStaffCache = out;
         try {
-          localStorage.setItem(STAFF_CUSTOM_KEY, JSON.stringify(list));
+          localStorage.setItem(STAFF_CUSTOM_KEY, JSON.stringify(customStaffCache));
         } catch (e) {}
+        syncAllStaffDocs(customStaffCache);
       }
 
       function getStaffList() {
