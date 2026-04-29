@@ -185,6 +185,23 @@
       margin-top: 0.25rem;
     }
 
+    .add-name-row {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+      align-items: stretch;
+    }
+
+    .add-name-row input {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .add-name-row .btn-ghost {
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+
     button {
       font-family: inherit;
       font-size: 1rem;
@@ -674,6 +691,16 @@
         <div>
           <label for="assignee">Assign to</label>
           <select id="assignee" required></select>
+          <div class="add-name-row">
+            <input
+              type="text"
+              id="new-assignee-name"
+              placeholder="Add a new name…"
+              autocomplete="name"
+              aria-label="New assignee name"
+            />
+            <button type="button" class="btn-ghost" id="add-assignee-btn">Add</button>
+          </div>
         </div>
         <div>
           <label for="duty">Duty</label>
@@ -903,13 +930,54 @@
         attachFirestoreListener("Live sync on", "ok");
       }
 
-      var STAFF = [
+      var STAFF_CUSTOM_KEY = "office-duty-staff-custom-v1";
+
+      var STAFF_BUILTIN = [
         { id: "eamonn", name: "Eamonn", bg: "#fb923c", fg: "#431407" },
         { id: "garry", name: "Garry", bg: "#4ade80", fg: "#14532d" },
         { id: "carlson", name: "Carlson", bg: "#93c5fd", fg: "#1e3a5f" },
         { id: "eason", name: "Eason", bg: "#991b1b", fg: "#fecaca" },
         { id: "pakho", name: "Pak Ho", bg: "#fef08a", fg: "#713f12" }
       ];
+
+      var CUSTOM_STAFF_PALETTE = [
+        { bg: "#a78bfa", fg: "#1e1b4b" },
+        { bg: "#f472b6", fg: "#500724" },
+        { bg: "#2dd4bf", fg: "#042f2e" },
+        { bg: "#fbbf24", fg: "#422006" },
+        { bg: "#818cf8", fg: "#1e1b4b" },
+        { bg: "#34d399", fg: "#064e3b" }
+      ];
+
+      function readCustomStaff() {
+        try {
+          var raw = localStorage.getItem(STAFF_CUSTOM_KEY);
+          if (!raw) return [];
+          var parsed = JSON.parse(raw);
+          return Array.isArray(parsed) ? parsed.filter(function (x) {
+            return x && typeof x.id === "string" && typeof x.name === "string" && x.name.trim();
+          }) : [];
+        } catch (e) {
+          return [];
+        }
+      }
+
+      function saveCustomStaff(list) {
+        try {
+          localStorage.setItem(STAFF_CUSTOM_KEY, JSON.stringify(list));
+        } catch (e) {}
+      }
+
+      function getStaffList() {
+        return STAFF_BUILTIN.concat(readCustomStaff());
+      }
+
+      function normalizeNameKey(name) {
+        return String(name)
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, " ");
+      }
 
       var DUTIES = [
         { id: "office-sweep", label: "Office Area (Sweep the floor)", bg: "#c084fc", fg: "#3b0764" },
@@ -920,8 +988,9 @@
       ];
 
       function staffById(id) {
-        for (var i = 0; i < STAFF.length; i++) {
-          if (STAFF[i].id === id) return STAFF[i];
+        var list = getStaffList();
+        for (var i = 0; i < list.length; i++) {
+          if (list[i].id === id) return list[i];
         }
         return { name: id, bg: "#64748b", fg: "#f1f5f9" };
       }
@@ -1258,15 +1327,56 @@
         document.removeEventListener("keydown", onCalKeydown);
       }
 
-      function populateSelects() {
+      function populateSelects(preserveAssigneeId) {
         var assigneeEl = document.getElementById("assignee");
         var dutyEl = document.getElementById("duty");
-        assigneeEl.innerHTML = STAFF.map(function (s) {
-          return '<option value="' + s.id + '">' + s.name + "</option>";
-        }).join("");
+        var prevAssignee =
+          preserveAssigneeId != null ? preserveAssigneeId : assigneeEl.value;
+        var staff = getStaffList();
+        assigneeEl.innerHTML = staff
+          .map(function (s) {
+            return '<option value="' + s.id + '">' + escapeHtml(s.name) + "</option>";
+          })
+          .join("");
+        if (prevAssignee) {
+          var has = staff.some(function (s) {
+            return s.id === prevAssignee;
+          });
+          if (has) assigneeEl.value = prevAssignee;
+        }
         dutyEl.innerHTML = DUTIES.map(function (d) {
           return '<option value="' + d.id + '">' + d.label + "</option>";
         }).join("");
+      }
+
+      function addCustomAssignee() {
+        var input = document.getElementById("new-assignee-name");
+        var name = input.value.trim();
+        if (!name) return;
+        var key = normalizeNameKey(name);
+        var list = getStaffList();
+        var i;
+        for (i = 0; i < list.length; i++) {
+          if (normalizeNameKey(list[i].name) === key) {
+            document.getElementById("assignee").value = list[i].id;
+            input.value = "";
+            return;
+          }
+        }
+        var custom = readCustomStaff();
+        var paletteIdx = custom.length % CUSTOM_STAFF_PALETTE.length;
+        var colors = CUSTOM_STAFF_PALETTE[paletteIdx];
+        var entry = {
+          id: "s-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7),
+          name: name,
+          bg: colors.bg,
+          fg: colors.fg
+        };
+        custom.push(entry);
+        saveCustomStaff(custom);
+        populateSelects(entry.id);
+        input.value = "";
+        input.focus();
       }
 
       function render() {
@@ -1543,6 +1653,14 @@
       document.getElementById("cal-clear-pick").addEventListener("click", function () {
         pickAnchor = null;
         renderCalModal();
+      });
+
+      document.getElementById("add-assignee-btn").addEventListener("click", addCustomAssignee);
+      document.getElementById("new-assignee-name").addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          addCustomAssignee();
+        }
       });
 
       populateSelects();
