@@ -124,6 +124,16 @@
       box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
     }
 
+    /* Phone: only the panel border — no second frame on the GIF */
+    @media (max-width: 719px) {
+      .add-task-marin img {
+        border: none;
+        box-shadow: none;
+        background: transparent;
+        border-radius: var(--radius);
+      }
+    }
+
     @media (min-width: 720px) {
       .add-task-layout {
         display: grid;
