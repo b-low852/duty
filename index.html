@@ -705,6 +705,16 @@
         <div>
           <label for="duty">Duty</label>
           <select id="duty" required></select>
+          <div class="add-name-row">
+            <input
+              type="text"
+              id="new-duty-label"
+              placeholder="Add a new duty type…"
+              autocomplete="off"
+              aria-label="New duty description"
+            />
+            <button type="button" class="btn-ghost" id="add-duty-btn">Add</button>
+          </div>
         </div>
         <div>
           <label for="week">Week number</label>
@@ -782,10 +792,13 @@
       var STORAGE_KEY = "office-duty-tasks-v1";
       var FIRESTORE_COLLECTION = "duty_tasks";
       var FIRESTORE_STAFF_COLLECTION = "duty_staff";
+      var FIRESTORE_DUTY_TYPES_COLLECTION = "duty_types";
       var STAFF_CUSTOM_KEY = "office-duty-staff-custom-v1";
+      var DUTIES_CUSTOM_KEY = "office-duty-types-custom-v1";
 
       var dutyMigratedLocalToCloud = false;
       var staffMigratedLocalToCloud = false;
+      var dutyTypesMigratedLocalToCloud = false;
       var tasksCache = [];
       /** Task ids we are deleting — ignore them in onSnapshot until delete commits (avoids race with server). */
       var pendingTaskDeletes = Object.create(null);
@@ -821,6 +834,43 @@
       }
 
       var customStaffCache = loadCustomStaffFromLocalStorage();
+
+      function normalizeCustomDutyEntry(x) {
+        if (!x || typeof x.id !== "string") return null;
+        var label =
+          x.label != null
+            ? String(x.label).trim()
+            : x.name != null
+              ? String(x.name).trim()
+              : "";
+        if (!label) return null;
+        return {
+          id: x.id,
+          label: label,
+          bg: typeof x.bg === "string" ? x.bg : "#64748b",
+          fg: typeof x.fg === "string" ? x.fg : "#f8fafc"
+        };
+      }
+
+      function loadCustomDutyFromLocalStorage() {
+        try {
+          var raw = localStorage.getItem(DUTIES_CUSTOM_KEY);
+          if (!raw) return [];
+          var parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed)) return [];
+          var out = [];
+          var i;
+          for (i = 0; i < parsed.length; i++) {
+            var n = normalizeCustomDutyEntry(parsed[i]);
+            if (n) out.push(n);
+          }
+          return out;
+        } catch (e) {
+          return [];
+        }
+      }
+
+      var customDutyCache = loadCustomDutyFromLocalStorage();
 
       function readLocalStorageTasks() {
         try {
@@ -921,6 +971,54 @@
         }).catch(function (err) {
           setSyncStatus("Sync failed: " + (err.message || "error"), "err");
         });
+      }
+
+      function dutyTypeToFirestoreDoc(d) {
+        return {
+          label: d.label,
+          bg: d.bg,
+          fg: d.fg
+        };
+      }
+
+      function syncAllDutyTypeDocs(dutyList) {
+        if (!canUseFirestore()) return Promise.resolve();
+        var db = firebase.firestore();
+        var col = db.collection(FIRESTORE_DUTY_TYPES_COLLECTION);
+        return col
+          .get()
+          .then(function (snap) {
+            var ops = [];
+            var want = {};
+            var i;
+            for (i = 0; i < dutyList.length; i++) want[dutyList[i].id] = true;
+            snap.forEach(function (doc) {
+              if (!want[doc.id]) ops.push({ type: "del", ref: doc.ref });
+            });
+            for (i = 0; i < dutyList.length; i++) {
+              var d = dutyList[i];
+              ops.push({ type: "set", ref: col.doc(d.id), data: dutyTypeToFirestoreDoc(d) });
+            }
+            var chunk = 400;
+            function runBatch(start) {
+              var batch = db.batch();
+              var end = Math.min(start + chunk, ops.length);
+              var j;
+              for (j = start; j < end; j++) {
+                if (ops[j].type === "del") batch.delete(ops[j].ref);
+                else batch.set(ops[j].ref, ops[j].data);
+              }
+              if (end >= ops.length) return batch.commit();
+              return batch.commit().then(function () {
+                return runBatch(end);
+              });
+            }
+            if (ops.length === 0) return Promise.resolve();
+            return runBatch(0);
+          })
+          .catch(function (err) {
+            setSyncStatus("Duty types sync failed: " + (err.message || "error"), "err");
+          });
       }
 
       function staffToFirestoreDoc(s) {
@@ -1030,6 +1128,40 @@
         );
       }
 
+      function attachDutyTypesFirestoreListener() {
+        var db = firebase.firestore();
+        db.collection(FIRESTORE_DUTY_TYPES_COLLECTION).onSnapshot(
+          function (snap) {
+            if (snap.empty && customDutyCache.length > 0 && !dutyTypesMigratedLocalToCloud) {
+              dutyTypesMigratedLocalToCloud = true;
+              syncAllDutyTypeDocs(customDutyCache);
+              return;
+            }
+            var list = [];
+            snap.forEach(function (d) {
+              var data = d.data();
+              if (!data) return;
+              var row = normalizeCustomDutyEntry({
+                id: d.id,
+                label: data.label,
+                bg: data.bg,
+                fg: data.fg
+              });
+              if (row) list.push(row);
+            });
+            customDutyCache = list;
+            try {
+              localStorage.setItem(DUTIES_CUSTOM_KEY, JSON.stringify(customDutyCache));
+            } catch (e) {}
+            populateSelects();
+            render();
+          },
+          function (err) {
+            setSyncStatus("Firestore (duty types): " + (err.message || "permission — publish firestore.rules"), "err");
+          }
+        );
+      }
+
       function initFirebaseIfConfigured() {
         if (typeof firebase === "undefined") {
           setSyncStatus("Firebase scripts blocked or offline — using local storage only", "warn");
@@ -1050,6 +1182,7 @@
         }
         attachFirestoreListener("Live sync on", "ok");
         attachStaffFirestoreListener();
+        attachDutyTypesFirestoreListener();
       }
 
       var STAFF_BUILTIN = [
@@ -1098,13 +1231,51 @@
           .replace(/\s+/g, " ");
       }
 
-      var DUTIES = [
+      var DUTIES_BUILTIN = [
         { id: "office-sweep", label: "Office Area (Sweep the floor)", bg: "#c084fc", fg: "#3b0764" },
         { id: "trash", label: "Take out the trash", bg: "#fce7f3", fg: "#831843" },
         { id: "brmr-sweep", label: "BR & MR (Sweep the floor)", bg: "#a5b4fc", fg: "#312e81" },
         { id: "brmr-dust", label: "BR & MR (Dust all furniture)", bg: "#ffedd5", fg: "#7c2d12" },
         { id: "toilet", label: "Clean the toilet", bg: "#166534", fg: "#dcfce7" }
       ];
+
+      var CUSTOM_DUTY_PALETTE = [
+        { bg: "#c084fc", fg: "#3b0764" },
+        { bg: "#f9a8d4", fg: "#831843" },
+        { bg: "#67e8f9", fg: "#164e63" },
+        { bg: "#fde047", fg: "#422006" },
+        { bg: "#86efac", fg: "#14532d" },
+        { bg: "#fdba74", fg: "#7c2d12" }
+      ];
+
+      function readCustomDuty() {
+        return customDutyCache;
+      }
+
+      function saveCustomDuty(list) {
+        var out = [];
+        var i;
+        for (i = 0; i < list.length; i++) {
+          var n = normalizeCustomDutyEntry(list[i]);
+          if (n) out.push(n);
+        }
+        customDutyCache = out;
+        try {
+          localStorage.setItem(DUTIES_CUSTOM_KEY, JSON.stringify(customDutyCache));
+        } catch (e) {}
+        syncAllDutyTypeDocs(customDutyCache);
+      }
+
+      function getDutyList() {
+        return DUTIES_BUILTIN.concat(readCustomDuty());
+      }
+
+      function normalizeDutyLabelKey(label) {
+        return String(label)
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, " ");
+      }
 
       function staffById(id) {
         var list = getStaffList();
@@ -1115,8 +1286,9 @@
       }
 
       function dutyById(id) {
-        for (var i = 0; i < DUTIES.length; i++) {
-          if (DUTIES[i].id === id) return DUTIES[i];
+        var list = getDutyList();
+        for (var i = 0; i < list.length; i++) {
+          if (list[i].id === id) return list[i];
         }
         return { label: id, bg: "#475569", fg: "#f8fafc" };
       }
@@ -1446,11 +1618,12 @@
         document.removeEventListener("keydown", onCalKeydown);
       }
 
-      function populateSelects(preserveAssigneeId) {
+      function populateSelects(preserve) {
+        preserve = preserve || {};
         var assigneeEl = document.getElementById("assignee");
         var dutyEl = document.getElementById("duty");
-        var prevAssignee =
-          preserveAssigneeId != null ? preserveAssigneeId : assigneeEl.value;
+        var prevAssignee = "assigneeId" in preserve ? preserve.assigneeId : assigneeEl.value;
+        var prevDuty = "dutyId" in preserve ? preserve.dutyId : dutyEl.value;
         var staff = getStaffList();
         assigneeEl.innerHTML = staff
           .map(function (s) {
@@ -1463,9 +1636,18 @@
           });
           if (has) assigneeEl.value = prevAssignee;
         }
-        dutyEl.innerHTML = DUTIES.map(function (d) {
-          return '<option value="' + d.id + '">' + d.label + "</option>";
-        }).join("");
+        var duties = getDutyList();
+        dutyEl.innerHTML = duties
+          .map(function (d) {
+            return '<option value="' + d.id + '">' + escapeHtml(d.label) + "</option>";
+          })
+          .join("");
+        if (prevDuty) {
+          var hasD = duties.some(function (d) {
+            return d.id === prevDuty;
+          });
+          if (hasD) dutyEl.value = prevDuty;
+        }
       }
 
       function addCustomAssignee() {
@@ -1493,7 +1675,37 @@
         };
         custom.push(entry);
         saveCustomStaff(custom);
-        populateSelects(entry.id);
+        populateSelects({ assigneeId: entry.id });
+        input.value = "";
+        input.focus();
+      }
+
+      function addCustomDuty() {
+        var input = document.getElementById("new-duty-label");
+        var label = input.value.trim();
+        if (!label) return;
+        var key = normalizeDutyLabelKey(label);
+        var list = getDutyList();
+        var i;
+        for (i = 0; i < list.length; i++) {
+          if (normalizeDutyLabelKey(list[i].label) === key) {
+            document.getElementById("duty").value = list[i].id;
+            input.value = "";
+            return;
+          }
+        }
+        var custom = readCustomDuty();
+        var paletteIdx = custom.length % CUSTOM_DUTY_PALETTE.length;
+        var colors = CUSTOM_DUTY_PALETTE[paletteIdx];
+        var entry = {
+          id: "d-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7),
+          label: label,
+          bg: colors.bg,
+          fg: colors.fg
+        };
+        custom.push(entry);
+        saveCustomDuty(custom);
+        populateSelects({ dutyId: entry.id });
         input.value = "";
         input.focus();
       }
@@ -1831,6 +2043,14 @@
         if (e.key === "Enter") {
           e.preventDefault();
           addCustomAssignee();
+        }
+      });
+
+      document.getElementById("add-duty-btn").addEventListener("click", addCustomDuty);
+      document.getElementById("new-duty-label").addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          addCustomDuty();
         }
       });
 

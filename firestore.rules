@@ -6,7 +6,7 @@ service cloud.firestore {
     // Optional: require sign-in — enable Authentication → Anonymous, then replace `if true` below
     //   with: allow read, write: if request.auth != null;
     // Shared roster: anyone with the app can read/write tasks (no login).
-    // duty_tasks and duty_staff are exposed; other paths stay locked by default.
+    // duty_tasks, duty_staff, and duty_types are exposed; other paths stay locked by default.
     // Anyone who knows your projectId could call the API — OK for a small trusted team only.
     match /duty_tasks/{taskId} {
       allow read, write: if true;
@@ -14,6 +14,11 @@ service cloud.firestore {
 
     // Office duty custom assignee names — one document per name (id = staff id)
     match /duty_staff/{staffId} {
+      allow read, write: if true;
+    }
+
+    // Custom duty / task labels (dropdown options) — one document per duty id
+    match /duty_types/{dutyTypeId} {
       allow read, write: if true;
     }
   }
