@@ -1290,14 +1290,6 @@
           .replace(/\s+/g, " ");
       }
 
-      var DUTIES_BUILTIN = [
-        { id: "office-sweep", label: "Office Area (Sweep the floor)", bg: "#c084fc", fg: "#3b0764" },
-        { id: "trash", label: "Take out the trash", bg: "#fce7f3", fg: "#831843" },
-        { id: "brmr-sweep", label: "BR & MR (Sweep the floor)", bg: "#a5b4fc", fg: "#312e81" },
-        { id: "brmr-dust", label: "BR & MR (Dust all furniture)", bg: "#ffedd5", fg: "#7c2d12" },
-        { id: "toilet", label: "Clean the toilet", bg: "#166534", fg: "#dcfce7" }
-      ];
-
       var CUSTOM_DUTY_PALETTE = [
         { bg: "#c084fc", fg: "#3b0764" },
         { bg: "#f9a8d4", fg: "#831843" },
@@ -1326,7 +1318,7 @@
       }
 
       function getDutyList() {
-        return DUTIES_BUILTIN.concat(readCustomDuty());
+        return readCustomDuty();
       }
 
       function normalizeDutyLabelKey(label) {
@@ -1696,16 +1688,21 @@
           if (has) assigneeEl.value = prevAssignee;
         }
         var duties = getDutyList();
-        dutyEl.innerHTML = duties
-          .map(function (d) {
-            return '<option value="' + d.id + '">' + escapeHtml(d.label) + "</option>";
-          })
-          .join("");
-        if (prevDuty) {
-          var hasD = duties.some(function (d) {
-            return d.id === prevDuty;
-          });
-          if (hasD) dutyEl.value = prevDuty;
+        if (duties.length === 0) {
+          dutyEl.innerHTML =
+            '<option value="" disabled selected>Select or add a duty type below</option>';
+        } else {
+          dutyEl.innerHTML = duties
+            .map(function (d) {
+              return '<option value="' + d.id + '">' + escapeHtml(d.label) + "</option>";
+            })
+            .join("");
+          if (prevDuty) {
+            var hasD = duties.some(function (d) {
+              return d.id === prevDuty;
+            });
+            if (hasD) dutyEl.value = prevDuty;
+          }
         }
       }
 
