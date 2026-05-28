@@ -815,6 +815,9 @@
         <h2>All tasks</h2>
         <div class="toolbar">
           <span id="sync-status" class="sync-status" role="status"></span>
+          <button type="button" class="btn-ghost" id="auto-assign-week" title="Clear open tasks for this week, then assign (no same duty within 2 weeks)">
+            Auto-assign week
+          </button>
           <button type="button" class="btn-ghost" id="clear-done">Clear completed</button>
         </div>
       </div>
@@ -1520,6 +1523,286 @@
         });
       }
 
+      function formatShortFromDate(d) {
+        return pad2(d.getDate()) + "/" + pad2(d.getMonth() + 1) + "/" + String(d.getFullYear()).slice(-2);
+      }
+
+      function assigneeIdsMatch(a, b) {
+        return String(a).toLowerCase() === String(b).toLowerCase();
+      }
+
+      function getTaskWeekKey(t) {
+        var start = parseDateRangeStart(t.dateRange);
+        if (start) return isoWeekKeyFromDate(start);
+        if (t.week != null && t.week !== "") {
+          var tw = isoWeekKeyToday().match(/^(\d{4})-W/);
+          var y = tw ? parseInt(tw[1], 10) : new Date().getFullYear();
+          var wn = Number(t.week);
+          return y + "-W" + (wn < 10 ? "0" : "") + wn;
+        }
+        if (t.completedAt) {
+          var done = new Date(t.completedAt);
+          if (!isNaN(done.getTime())) return isoWeekKeyFromDate(done);
+        }
+        return null;
+      }
+
+      function cooldownWeekKeys(targetKey) {
+        var k1 = prevIsoWeekKey(targetKey);
+        if (!k1) return [];
+        var k2 = prevIsoWeekKey(k1);
+        var out = [k1];
+        if (k2) out.push(k2);
+        return out;
+      }
+
+      function assigneeHadDutyInWeeks(tasks, assigneeId, dutyId, weekKeys) {
+        var i;
+        for (i = 0; i < tasks.length; i++) {
+          var t = tasks[i];
+          if (!assigneeIdsMatch(t.assigneeId, assigneeId) || t.dutyId !== dutyId) continue;
+          var wk = getTaskWeekKey(t);
+          if (wk && weekKeys.indexOf(wk) !== -1) return true;
+        }
+        return false;
+      }
+
+      /** Who did which duty last week (reads all tasks, including completed). */
+      function buildLastWeekDutyByPerson(tasks, weekKey) {
+        var lastWeek = prevIsoWeekKey(weekKey);
+        var map = Object.create(null);
+        if (!lastWeek) return map;
+        var i;
+        var t;
+        var wk;
+        var aid;
+        for (i = 0; i < tasks.length; i++) {
+          t = tasks[i];
+          wk = getTaskWeekKey(t);
+          if (wk !== lastWeek) continue;
+          aid = String(t.assigneeId).toLowerCase();
+          if (!map[aid]) map[aid] = Object.create(null);
+          map[aid][t.dutyId] = true;
+        }
+        return map;
+      }
+
+      function personHadDutyLastWeek(lastWeekMap, assigneeId, dutyId) {
+        var m = lastWeekMap[String(assigneeId).toLowerCase()];
+        return !!(m && m[dutyId]);
+      }
+
+      function weekHasDuty(tasks, weekKey, dutyId) {
+        var i;
+        for (i = 0; i < tasks.length; i++) {
+          if (tasks[i].dutyId !== dutyId) continue;
+          if (getTaskWeekKey(tasks[i]) === weekKey) return true;
+        }
+        return false;
+      }
+
+      function assigneeHasTaskInWeek(tasks, assigneeId, weekKey) {
+        var i;
+        for (i = 0; i < tasks.length; i++) {
+          if (!assigneeIdsMatch(tasks[i].assigneeId, assigneeId)) continue;
+          if (getTaskWeekKey(tasks[i]) === weekKey) return true;
+        }
+        return false;
+      }
+
+      function countDutyAssignmentsInWeek(tasks, weekKey, dutyId) {
+        var n = 0;
+        var i;
+        for (i = 0; i < tasks.length; i++) {
+          if (tasks[i].dutyId !== dutyId) continue;
+          if (getTaskWeekKey(tasks[i]) === weekKey) n++;
+        }
+        return n;
+      }
+
+      function lastDutyMondayForAssignee(tasks, assigneeId, dutyId) {
+        var best = -1;
+        var i;
+        for (i = 0; i < tasks.length; i++) {
+          var t = tasks[i];
+          if (!assigneeIdsMatch(t.assigneeId, assigneeId) || t.dutyId !== dutyId) continue;
+          var wk = getTaskWeekKey(t);
+          if (!wk) continue;
+          var mon = mondayFromIsoWeekKey(wk).getTime();
+          if (mon > best) best = mon;
+        }
+        return best;
+      }
+
+      function pickAssigneeForDuty(staff, tasks, weekKey, dutyId, lastWeekMap) {
+        var cool = cooldownWeekKeys(weekKey);
+        var eligible = [];
+        var i;
+        for (i = 0; i < staff.length; i++) {
+          if (personHadDutyLastWeek(lastWeekMap, staff[i].id, dutyId)) continue;
+          if (assigneeHadDutyInWeeks(tasks, staff[i].id, dutyId, [weekKey])) continue;
+          if (!assigneeHadDutyInWeeks(tasks, staff[i].id, dutyId, cool)) eligible.push(staff[i]);
+        }
+        if (!eligible.length) {
+          var lastOnly = prevIsoWeekKey(weekKey);
+          for (i = 0; i < staff.length; i++) {
+            if (lastOnly && assigneeHadDutyInWeeks(tasks, staff[i].id, dutyId, [lastOnly])) continue;
+            eligible.push(staff[i]);
+          }
+        }
+        if (!eligible.length) eligible = staff.slice();
+
+        var without = [];
+        for (i = 0; i < eligible.length; i++) {
+          if (!assigneeHasTaskInWeek(tasks, eligible[i].id, weekKey)) without.push(eligible[i]);
+        }
+        var pool = without.length ? without : eligible;
+
+        pool.sort(function (a, b) {
+          var la = lastDutyMondayForAssignee(tasks, a.id, dutyId);
+          var lb = lastDutyMondayForAssignee(tasks, b.id, dutyId);
+          if (la !== lb) return la - lb;
+          return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+        });
+        return pool[0] || null;
+      }
+
+      function pickDutyForPerson(duties, tasks, weekKey, assigneeId, lastWeekMap) {
+        var cool = cooldownWeekKeys(weekKey);
+        var candidates = [];
+        var d;
+        for (d = 0; d < duties.length; d++) {
+          var dutyId = duties[d].id;
+          if (personHadDutyLastWeek(lastWeekMap, assigneeId, dutyId)) continue;
+          if (assigneeHadDutyInWeeks(tasks, assigneeId, dutyId, [weekKey])) continue;
+          if (assigneeHadDutyInWeeks(tasks, assigneeId, dutyId, cool)) continue;
+          candidates.push({
+            duty: duties[d],
+            count: countDutyAssignmentsInWeek(tasks, weekKey, dutyId)
+          });
+        }
+        if (!candidates.length) {
+          for (d = 0; d < duties.length; d++) {
+            dutyId = duties[d].id;
+            if (personHadDutyLastWeek(lastWeekMap, assigneeId, dutyId)) continue;
+            if (assigneeHadDutyInWeeks(tasks, assigneeId, dutyId, [weekKey])) continue;
+            candidates.push({
+              duty: duties[d],
+              count: countDutyAssignmentsInWeek(tasks, weekKey, duties[d].id)
+            });
+          }
+        }
+        candidates.sort(function (a, b) {
+          if (a.count !== b.count) return a.count - b.count;
+          return a.duty.id < b.duty.id ? -1 : a.duty.id > b.duty.id ? 1 : 0;
+        });
+        return candidates.length ? candidates[0].duty : null;
+      }
+
+      function createAutoTask(weekKey, assigneeId, dutyId) {
+        var mon = mondayFromIsoWeekKey(weekKey);
+        var sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
+        var m = String(weekKey).match(/^(\d{4})-W(\d{1,2})$/);
+        var weekNum = m ? parseInt(m[2], 10) : null;
+        return {
+          id: uid(),
+          assigneeId: assigneeId,
+          dutyId: dutyId,
+          week: weekNum,
+          dateRange: formatShortFromDate(mon) + "\u2013" + formatShortFromDate(sun),
+          remarks: null,
+          urgent: false,
+          completed: false,
+          completedAt: null
+        };
+      }
+
+      /** Fill week: each duty once; each person at least one task; 2-week duty cooldown. */
+      function autoAssignWeek(weekKey) {
+        var staff = getStaffList();
+        var duties = getDutyList();
+        if (!staff.length) {
+          return { created: 0, message: "Add staff names first." };
+        }
+        if (!duties.length) {
+          return { created: 0, message: "Add duty types first." };
+        }
+
+        var tasks = loadTasks().slice();
+        var lastWeekMap = buildLastWeekDutyByPerson(tasks, weekKey);
+        var created = 0;
+        var d;
+        var s;
+        var assignee;
+        var duty;
+
+        for (d = 0; d < duties.length; d++) {
+          if (weekHasDuty(tasks, weekKey, duties[d].id)) continue;
+          assignee = pickAssigneeForDuty(staff, tasks, weekKey, duties[d].id, lastWeekMap);
+          if (!assignee) continue;
+          tasks.unshift(createAutoTask(weekKey, assignee.id, duties[d].id));
+          created++;
+        }
+
+        for (s = 0; s < staff.length; s++) {
+          if (assigneeHasTaskInWeek(tasks, staff[s].id, weekKey)) continue;
+          duty = pickDutyForPerson(duties, tasks, weekKey, staff[s].id, lastWeekMap);
+          if (!duty) continue;
+          tasks.unshift(createAutoTask(weekKey, staff[s].id, duty.id));
+          created++;
+        }
+
+        if (created > 0) {
+          saveTasks(tasks);
+        }
+        return {
+          created: created,
+          message:
+            created > 0
+              ? "Auto-assigned " + created + " task(s) for this week."
+              : "This week already has all duties and staff covered."
+        };
+      }
+
+      function removeIncompleteTasksInWeek(tasks, weekKey) {
+        return tasks.filter(function (t) {
+          if (t.completed) return true;
+          return getTaskWeekKey(t) !== weekKey;
+        });
+      }
+
+      /** Clear open tasks for the week, then assign again using last week's roster. */
+      function rebuildAutoAssignWeek(weekKey) {
+        var tasks = removeIncompleteTasksInWeek(loadTasks().slice(), weekKey);
+        saveTasks(tasks);
+        return autoAssignWeek(weekKey);
+      }
+
+      function weekKeyForAutoAssign() {
+        var weekInput = document.getElementById("week").value.trim();
+        if (weekInput) {
+          var y = parseInt(isoWeekKeyToday().slice(0, 4), 10);
+          var wn = Number(weekInput);
+          return y + "-W" + (wn < 10 ? "0" : "") + wn;
+        }
+        var startIso = document.getElementById("date-start").value;
+        if (startIso && /^(\d{4})-(\d{2})-(\d{2})$/.test(startIso)) {
+          var p = startIso.split("-");
+          return isoWeekKeyFromDate(new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])));
+        }
+        return isoWeekKeyToday();
+      }
+
+      function onAutoAssignWeekClick() {
+        var weekKey = weekKeyForAutoAssign();
+        var result = rebuildAutoAssignWeek(weekKey);
+        setSyncStatus(
+          result.created > 0 ? result.message : "Nothing new to assign — check staff and duty types.",
+          result.created > 0 ? "ok" : "warn"
+        );
+        render();
+      }
+
       function todayIso() {
         return new Date().toISOString();
       }
@@ -1992,6 +2275,8 @@
         document.getElementById("date-range").value = "";
         render();
       });
+
+      document.getElementById("auto-assign-week").addEventListener("click", onAutoAssignWeekClick);
 
       document.getElementById("clear-done").addEventListener("click", function () {
         var all = loadTasks();
