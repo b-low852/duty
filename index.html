@@ -1244,14 +1244,6 @@
         attachDutyTypesFirestoreListener();
       }
 
-      var STAFF_BUILTIN = [
-        { id: "eamonn", name: "Eamonn", bg: "#fb923c", fg: "#431407" },
-        { id: "garry", name: "Garry", bg: "#4ade80", fg: "#14532d" },
-        { id: "carlson", name: "Carlson", bg: "#93c5fd", fg: "#1e3a5f" },
-        { id: "eason", name: "Eason", bg: "#991b1b", fg: "#fecaca" },
-        { id: "pakho", name: "Pak Ho", bg: "#fef08a", fg: "#713f12" }
-      ];
-
       var CUSTOM_STAFF_PALETTE = [
         { bg: "#a78bfa", fg: "#1e1b4b" },
         { bg: "#f472b6", fg: "#500724" },
@@ -1280,7 +1272,7 @@
       }
 
       function getStaffList() {
-        return STAFF_BUILTIN.concat(readCustomStaff());
+        return readCustomStaff();
       }
 
       function normalizeNameKey(name) {
@@ -1676,16 +1668,21 @@
         var prevAssignee = "assigneeId" in preserve ? preserve.assigneeId : assigneeEl.value;
         var prevDuty = "dutyId" in preserve ? preserve.dutyId : dutyEl.value;
         var staff = getStaffList();
-        assigneeEl.innerHTML = staff
-          .map(function (s) {
-            return '<option value="' + s.id + '">' + escapeHtml(s.name) + "</option>";
-          })
-          .join("");
-        if (prevAssignee) {
-          var has = staff.some(function (s) {
-            return s.id === prevAssignee;
-          });
-          if (has) assigneeEl.value = prevAssignee;
+        if (staff.length === 0) {
+          assigneeEl.innerHTML =
+            '<option value="" disabled selected>Select or add a name below</option>';
+        } else {
+          assigneeEl.innerHTML = staff
+            .map(function (s) {
+              return '<option value="' + s.id + '">' + escapeHtml(s.name) + "</option>";
+            })
+            .join("");
+          if (prevAssignee) {
+            var has = staff.some(function (s) {
+              return s.id === prevAssignee;
+            });
+            if (has) assigneeEl.value = prevAssignee;
+          }
         }
         var duties = getDutyList();
         if (duties.length === 0) {
