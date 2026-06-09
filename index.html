@@ -30,6 +30,7 @@
       --surface-glass: rgba(26, 31, 46, 0.78);
       --surface2-glass: rgba(35, 41, 56, 0.72);
       --border: #343b4f;
+      --week-divider: rgba(139, 147, 168, 0.72);
       --text: #e8eaef;
       --muted: #8b93a8;
       --accent: #5b8def;
@@ -308,6 +309,12 @@
 
     .week-block {
       margin-bottom: 1.5rem;
+      padding-bottom: 1.25rem;
+    }
+
+    .week-block:not(:last-child) {
+      border-bottom: 2px solid var(--week-divider);
+      box-shadow: 0 1px 0 rgba(232, 234, 239, 0.08);
     }
 
     .week-label {
@@ -317,7 +324,7 @@
       gap: 0.5rem 1rem;
       margin-bottom: 0.65rem;
       padding-bottom: 0.5rem;
-      border-bottom: 1px solid var(--border);
+      border-bottom: 2px solid var(--week-divider);
     }
 
     .week-num {
@@ -506,6 +513,11 @@
       text-align: left;
       border-bottom: 1px solid var(--border);
       vertical-align: middle;
+    }
+
+    tbody tr.week-group-start:not(:first-child) td {
+      border-top: 2px solid var(--week-divider);
+      box-shadow: inset 0 1px 0 rgba(232, 234, 239, 0.08);
     }
 
     th {
@@ -815,7 +827,7 @@
         <h2>All tasks</h2>
         <div class="toolbar">
           <span id="sync-status" class="sync-status" role="status"></span>
-          <button type="button" class="btn-ghost" id="auto-assign-week" title="Clear open tasks for this week, then assign (no same duty within 2 weeks)">
+          <button type="button" class="btn-ghost" id="auto-assign-week" title="Clear open tasks for this week, then assign (weekly duties each week; monthly duties once in the week that contains the 1st)">
             Auto-assign week
           </button>
           <button type="button" class="btn-ghost" id="clear-done">Clear completed</button>
@@ -897,6 +909,14 @@
 
       var customStaffCache = loadCustomStaffFromLocalStorage();
 
+      function isSweepStairsDutyLabel(label) {
+        return /sweep\s+the\s+stair/i.test(String(label).trim());
+      }
+
+      function dutySchedule(d) {
+        return d && d.schedule === "monthly" ? "monthly" : "weekly";
+      }
+
       function normalizeCustomDutyEntry(x) {
         if (!x || typeof x.id !== "string") return null;
         var label =
@@ -906,12 +926,24 @@
               ? String(x.name).trim()
               : "";
         if (!label) return null;
-        return {
+        var entry = {
           id: x.id,
           label: label,
           bg: typeof x.bg === "string" ? x.bg : "#64748b",
           fg: typeof x.fg === "string" ? x.fg : "#f8fafc"
         };
+        if (x.schedule === "monthly") entry.schedule = "monthly";
+        if (
+          typeof x.monthlySkipThrough === "string" &&
+          /^\d{4}-\d{2}$/.test(x.monthlySkipThrough)
+        ) {
+          entry.monthlySkipThrough = x.monthlySkipThrough;
+        }
+        if (isSweepStairsDutyLabel(label)) {
+          entry.schedule = "monthly";
+          entry.monthlySkipThrough = entry.monthlySkipThrough || "2026-06";
+        }
+        return entry;
       }
 
       function loadCustomDutyFromLocalStorage() {
@@ -1036,11 +1068,14 @@
       }
 
       function dutyTypeToFirestoreDoc(d) {
-        return {
+        var doc = {
           label: d.label,
           bg: d.bg,
           fg: d.fg
         };
+        if (d.schedule === "monthly") doc.schedule = "monthly";
+        if (d.monthlySkipThrough) doc.monthlySkipThrough = d.monthlySkipThrough;
+        return doc;
       }
 
       function syncAllDutyTypeDocs(dutyList) {
@@ -1200,6 +1235,7 @@
               return;
             }
             var list = [];
+            var needsScheduleSync = false;
             snap.forEach(function (d) {
               var data = d.data();
               if (!data) return;
@@ -1207,11 +1243,21 @@
                 id: d.id,
                 label: data.label,
                 bg: data.bg,
-                fg: data.fg
+                fg: data.fg,
+                schedule: data.schedule,
+                monthlySkipThrough: data.monthlySkipThrough
               });
-              if (row) list.push(row);
+              if (!row) return;
+              if (
+                row.schedule === "monthly" &&
+                (data.schedule !== "monthly" || data.monthlySkipThrough !== row.monthlySkipThrough)
+              ) {
+                needsScheduleSync = true;
+              }
+              list.push(row);
             });
             customDutyCache = list;
+            if (needsScheduleSync) syncAllDutyTypeDocs(customDutyCache);
             try {
               localStorage.setItem(DUTIES_CUSTOM_KEY, JSON.stringify(customDutyCache));
             } catch (e) {}
@@ -1601,6 +1647,60 @@
         return false;
       }
 
+      /** Calendar month (year + 0-based month) whose 1st falls in this ISO week, or null. */
+      function targetMonthForWeeklyAssign(weekKey) {
+        var mon = mondayFromIsoWeekKey(weekKey);
+        if (isNaN(mon.getTime())) return null;
+        var sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
+        var cur = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate());
+        while (cur <= sun) {
+          if (cur.getDate() === 1) {
+            return { year: cur.getFullYear(), month: cur.getMonth() };
+          }
+          cur.setDate(cur.getDate() + 1);
+        }
+        return null;
+      }
+
+      function monthHasDuty(tasks, year, month, dutyId) {
+        var i;
+        for (i = 0; i < tasks.length; i++) {
+          if (tasks[i].dutyId !== dutyId) continue;
+          var start = parseDateRangeStart(tasks[i].dateRange);
+          if (!start) continue;
+          if (start.getFullYear() === year && start.getMonth() === month) return true;
+        }
+        return false;
+      }
+
+      function isMonthSkippedForDuty(duty, year, month) {
+        if (!duty || !duty.monthlySkipThrough) return false;
+        var key = year + "-" + pad2(month + 1);
+        return key <= duty.monthlySkipThrough;
+      }
+
+      function shouldAutoAssignDuty(duty, weekKey, tasks) {
+        if (dutySchedule(duty) === "weekly") {
+          return !weekHasDuty(tasks, weekKey, duty.id);
+        }
+        var tm = targetMonthForWeeklyAssign(weekKey);
+        if (!tm) return false;
+        if (isMonthSkippedForDuty(duty, tm.year, tm.month)) return false;
+        return !monthHasDuty(tasks, tm.year, tm.month, duty.id);
+      }
+
+      function assigneeHadDutyInCalendarMonth(tasks, assigneeId, dutyId, year, month) {
+        var i;
+        for (i = 0; i < tasks.length; i++) {
+          var t = tasks[i];
+          if (!assigneeIdsMatch(t.assigneeId, assigneeId) || t.dutyId !== dutyId) continue;
+          var start = parseDateRangeStart(t.dateRange);
+          if (!start) continue;
+          if (start.getFullYear() === year && start.getMonth() === month) return true;
+        }
+        return false;
+      }
+
       function assigneeHasTaskInWeek(tasks, assigneeId, weekKey) {
         var i;
         for (i = 0; i < tasks.length; i++) {
@@ -1634,14 +1734,27 @@
         return best;
       }
 
-      function pickAssigneeForDuty(staff, tasks, weekKey, dutyId, lastWeekMap) {
+      function pickAssigneeForDuty(staff, tasks, weekKey, dutyId, lastWeekMap, duty) {
         var cool = cooldownWeekKeys(weekKey);
+        var monthly = duty && dutySchedule(duty) === "monthly";
+        var tm = monthly ? targetMonthForWeeklyAssign(weekKey) : null;
         var eligible = [];
         var i;
         for (i = 0; i < staff.length; i++) {
           if (personHadDutyLastWeek(lastWeekMap, staff[i].id, dutyId)) continue;
           if (assigneeHadDutyInWeeks(tasks, staff[i].id, dutyId, [weekKey])) continue;
-          if (!assigneeHadDutyInWeeks(tasks, staff[i].id, dutyId, cool)) eligible.push(staff[i]);
+          if (
+            monthly &&
+            tm &&
+            assigneeHadDutyInCalendarMonth(tasks, staff[i].id, dutyId, tm.year, tm.month)
+          ) {
+            continue;
+          }
+          if (!monthly && !assigneeHadDutyInWeeks(tasks, staff[i].id, dutyId, cool)) {
+            eligible.push(staff[i]);
+          } else if (monthly) {
+            eligible.push(staff[i]);
+          }
         }
         if (!eligible.length) {
           var lastOnly = prevIsoWeekKey(weekKey);
@@ -1672,10 +1785,13 @@
         var candidates = [];
         var d;
         for (d = 0; d < duties.length; d++) {
+          if (!shouldAutoAssignDuty(duties[d], weekKey, tasks)) continue;
           var dutyId = duties[d].id;
           if (personHadDutyLastWeek(lastWeekMap, assigneeId, dutyId)) continue;
           if (assigneeHadDutyInWeeks(tasks, assigneeId, dutyId, [weekKey])) continue;
-          if (assigneeHadDutyInWeeks(tasks, assigneeId, dutyId, cool)) continue;
+          if (dutySchedule(duties[d]) === "weekly" && assigneeHadDutyInWeeks(tasks, assigneeId, dutyId, cool)) {
+            continue;
+          }
           candidates.push({
             duty: duties[d],
             count: countDutyAssignmentsInWeek(tasks, weekKey, dutyId)
@@ -1683,6 +1799,7 @@
         }
         if (!candidates.length) {
           for (d = 0; d < duties.length; d++) {
+            if (!shouldAutoAssignDuty(duties[d], weekKey, tasks)) continue;
             dutyId = duties[d].id;
             if (personHadDutyLastWeek(lastWeekMap, assigneeId, dutyId)) continue;
             if (assigneeHadDutyInWeeks(tasks, assigneeId, dutyId, [weekKey])) continue;
@@ -1717,7 +1834,7 @@
         };
       }
 
-      /** Fill week: each duty once; each person at least one task; 2-week duty cooldown. */
+      /** Fill week: weekly duties each week; monthly duties once per calendar month; 2-week cooldown for weekly. */
       function autoAssignWeek(weekKey) {
         var staff = getStaffList();
         var duties = getDutyList();
@@ -1737,8 +1854,8 @@
         var duty;
 
         for (d = 0; d < duties.length; d++) {
-          if (weekHasDuty(tasks, weekKey, duties[d].id)) continue;
-          assignee = pickAssigneeForDuty(staff, tasks, weekKey, duties[d].id, lastWeekMap);
+          if (!shouldAutoAssignDuty(duties[d], weekKey, tasks)) continue;
+          assignee = pickAssigneeForDuty(staff, tasks, weekKey, duties[d].id, lastWeekMap, duties[d]);
           if (!assignee) continue;
           tasks.unshift(createAutoTask(weekKey, assignee.id, duties[d].id));
           created++;
@@ -2081,7 +2198,15 @@
 
           var rowspan = list.length;
           for (var r = 0; r < list.length; r++) {
-            tableRows += taskTableRowHtml(list[r], r === 0, rowspan, grp.weekTable, grp.dateTable, g % 2 === 1);
+            tableRows += taskTableRowHtml(
+              list[r],
+              r === 0,
+              r === list.length - 1,
+              rowspan,
+              grp.weekTable,
+              grp.dateTable,
+              g % 2 === 1
+            );
           }
         }
 
@@ -2153,11 +2278,14 @@
         );
       }
 
-      function taskTableRowHtml(t, first, rowspan, weekColText, dateColText, altWeek) {
+      function taskTableRowHtml(t, first, lastInGroup, rowspan, weekColText, dateColText, altWeek) {
         var s = staffById(t.assigneeId);
         var d = dutyById(t.dutyId);
         var urgent = t.urgent ? " urgent" : "";
         var done = t.completed ? " done" : "";
+        var rowClass = urgent + done;
+        if (first) rowClass += " week-group-start";
+        if (lastInGroup) rowClass += " week-group-end";
         var weekCell = "";
         var dateCell = "";
         if (first) {
@@ -2180,8 +2308,7 @@
         }
         return (
           "<tr class='" +
-          urgent +
-          done +
+          rowClass +
           "' data-id='" +
           escapeHtml(t.id) +
           "'>" +
