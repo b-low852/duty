@@ -1741,6 +1741,7 @@
         var eligible = [];
         var i;
         for (i = 0; i < staff.length; i++) {
+          if (assigneeHasTaskInWeek(tasks, staff[i].id, weekKey)) continue;
           if (personHadDutyLastWeek(lastWeekMap, staff[i].id, dutyId)) continue;
           if (assigneeHadDutyInWeeks(tasks, staff[i].id, dutyId, [weekKey])) continue;
           if (
@@ -1759,25 +1760,26 @@
         if (!eligible.length) {
           var lastOnly = prevIsoWeekKey(weekKey);
           for (i = 0; i < staff.length; i++) {
+            if (assigneeHasTaskInWeek(tasks, staff[i].id, weekKey)) continue;
             if (lastOnly && assigneeHadDutyInWeeks(tasks, staff[i].id, dutyId, [lastOnly])) continue;
             eligible.push(staff[i]);
           }
         }
-        if (!eligible.length) eligible = staff.slice();
-
-        var without = [];
-        for (i = 0; i < eligible.length; i++) {
-          if (!assigneeHasTaskInWeek(tasks, eligible[i].id, weekKey)) without.push(eligible[i]);
+        if (!eligible.length) {
+          for (i = 0; i < staff.length; i++) {
+            if (assigneeHasTaskInWeek(tasks, staff[i].id, weekKey)) continue;
+            eligible.push(staff[i]);
+          }
         }
-        var pool = without.length ? without : eligible;
+        if (!eligible.length) return null;
 
-        pool.sort(function (a, b) {
+        eligible.sort(function (a, b) {
           var la = lastDutyMondayForAssignee(tasks, a.id, dutyId);
           var lb = lastDutyMondayForAssignee(tasks, b.id, dutyId);
           if (la !== lb) return la - lb;
           return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
         });
-        return pool[0] || null;
+        return eligible[0] || null;
       }
 
       function pickDutyForPerson(duties, tasks, weekKey, assigneeId, lastWeekMap) {
@@ -1834,7 +1836,7 @@
         };
       }
 
-      /** Fill week: weekly duties each week; monthly duties once per calendar month; 2-week cooldown for weekly. */
+      /** Fill week: one task per person; weekly duties each week; monthly duties once per calendar month. */
       function autoAssignWeek(weekKey) {
         var staff = getStaffList();
         var duties = getDutyList();
